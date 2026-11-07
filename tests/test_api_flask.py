@@ -121,6 +121,12 @@ def test_leave_submission_validation_and_decision_history(client):
             DELETE FROM timeline_items WHERE employee_id='E001' AND item_type IN ('approval_deadline', 'return_to_work')
         """)
         conn.execute("DELETE FROM leave_requests WHERE employee_id='E001' AND start_date >= '2026-12-05' AND end_date <= '2026-12-12'")
+        # Reset annual balance to ensure the test is idempotent across repeated runs
+        # (prior test passes may have consumed E001's entitlement)
+        conn.execute("""
+            UPDATE leave_balances SET used_days = 0
+            WHERE employee_id = 'E001' AND leave_type = 'annual' AND year = 2026
+        """)
 
     res_sub = client.post(
         "/api/leave/request",
