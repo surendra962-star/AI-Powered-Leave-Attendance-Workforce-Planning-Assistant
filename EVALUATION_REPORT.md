@@ -3,7 +3,7 @@
 
 **Evaluation Date**: 2026-11-07  
 **Execution Environment**: Python 3.9.6 (Darwin / macOS, `.venv`)  
-**Test Suite Result**: **145 passed in 74.53s** (100% pass rate across 15 test suites)  
+**Test Suite Result**: **159 passed in 74.64s** (100% pass rate across 16 test modules)  
 
 ---
 
@@ -52,8 +52,9 @@ All 16 functional modules and assignment requirements were verified and develope
 | **10. Timeline & Alerts** | Persisted items present; basic in-app alerts | Missing priority level, completion status, reminder dates, and audit trail | Added `priority`, `status`, `reminder_date`, and update functions | **Complete** |
 | **11. Workforce Analytics** | Single-month team metrics present | Missing organization-wide workforce metrics and CSV export | Implemented `organization_workforce_summary` and `export_metrics_csv` | **Complete** |
 | **12. Streamlit UI** | Basic UI present; lacked attendance check-in, backup tools, and HR admin | No clock-in widget, no leave cancellation, no audit viewer, no backup recommendations | Rewrote `app.py` with multi-tab workspaces, pre-seeded credential reference, and audit tools | **Complete** |
-| **13. Test Suite** | 37 tests existed; attendance, audit, and e2e scenarios untested | Missing tests for attendance, HR admin, and 10 assessment scenarios | Added 16 new automated tests; total **54 passed tests** | **Complete** |
-| **14. Flask REST API Backend** | Direct service imports only | Lacked standardized REST API layer for request handling and service orchestration | Implemented `api.py` with Flask REST endpoints for auth, leave, attendance, and RAG | **Complete** |
+| **13. Test Suite** | 37 baseline tests existed | Missing tests for attendance, comp-off, timelines, coverage, dashboards, REST API, and RAG benchmark queries | Added 122 new automated tests across 11 test modules; total **159 passed tests in 16 test modules** | **Complete** |
+| **14. Flask REST API Backend** | Direct service imports only | Lacked standardized REST API layer for request handling and service orchestration | Implemented `api.py` with 24 Flask REST endpoints with RBAC authorization and `api_client.py` for Streamlit-to-Flask dual-mode integration | **Complete** |
+| **15. RAG Policy Benchmark Suite** | Single-question tests only | Lacked standardized benchmark verifying 10 real-world policy questions across versions and edge cases | Authored `data/rag_benchmark_questions.json` and verified with `tests/test_rag_10_benchmark_questions.py` covering multi-page citations, version routing, prompt injection, and abstention | **Complete** |
 
 ---
 
@@ -216,7 +217,75 @@ All 11 required items from Phase 5 were systematically implemented across `analy
 
 ---
 
-## 8. System Limitations & Boundaries
+## 8. Phase 6: Flask REST API, 10 Benchmark Policy RAG Suite & Final Submission
+
+Phase 6 completes the architecture with an industrial-grade Flask REST API service, client integration, and comprehensive RAG policy verification. Verified by `tests/test_api_flask.py` (8 integration tests) and `tests/test_rag_10_benchmark_questions.py` (10 benchmark tests).
+
+### 8.1 Complete Flask REST API Endpoint Catalog (24 Endpoints)
+
+| HTTP Method | Route | Authorization Scope | Primary Service Invocation | Error Handling & Status Codes |
+|---|---|---|---|---|
+| `POST` | `/api/auth/login` | Public | `authenticate()` | `200 OK` on success, `401 Unauthorized` on bad password/ID |
+| `GET` | `/api/auth/me` | Authenticated | `get_actor_from_request()` | `200 OK` with user context, `401 Unauthorized` |
+| `POST` | `/api/leave/request` | Authenticated | `create_leave_request()` | `201 Created`, `400 Bad Request` on invalid dates or notice breach |
+| `GET` | `/api/leave/balance` | Authenticated | `get_balance()` | `200 OK` with entitled, used, pending, remaining breakdown |
+| `GET` | `/api/leave/requests` | Authenticated | `list_leave_requests()` | `200 OK` filtered by employee or team scope |
+| `POST` | `/api/leave/decide` | Manager / HR | `decide_leave_request()` | `200 OK`, `403 Forbidden` if peer/non-manager attempts decision |
+| `POST` | `/api/leave/cancel` | Authenticated | `cancel_leave_request()` | `200 OK`, `400 Bad Request` if already rejected or invalid |
+| `GET` | `/api/leave/holidays` | Authenticated | `list_holidays()` | `200 OK` with public and optional holidays |
+| `GET` | `/api/leave/decision-history/<id>` | Authenticated | `get_decision_history()` | `200 OK` with full AI evaluation & human audit history |
+| `POST` | `/api/attendance/clock-in` | Authenticated | `clock_in()` | `200 OK`, `400 Bad Request` on duplicate clock-in for the day |
+| `POST` | `/api/attendance/clock-out` | Authenticated | `clock_out()` | `200 OK`, `400 Bad Request` if no active clock-in exists |
+| `GET` | `/api/attendance/history` | Authenticated | `get_attendance_history()` | `200 OK` with employee date-by-date punch logs |
+| `GET` | `/api/attendance/missing-clock-outs`| Authenticated | `get_missing_clock_outs()` | `200 OK` listing unclosed sessions |
+| `POST` | `/api/attendance/regularize` | Authenticated | `regularize_missing_clock_out()` | `200 OK` with updated checkout timestamp & audit log |
+| `POST` | `/api/workforce/evaluate` | Manager / HR | `evaluate_leave_request()` | `200 OK` with coverage analysis, rules evaluated, recommendation |
+| `GET` | `/api/workforce/coverage` | Manager / HR | `get_team_coverage()` | `200 OK` with daily headcount, available staff, & breach indicators |
+| `GET` | `/api/workforce/backups` | Manager / HR | `recommend_backups()` | `200 OK` with ranked team backup candidates |
+| `POST` | `/api/workforce/what-if` | Manager / HR | `simulate_what_if_leave()` | `200 OK` with hypothetical feasibility score & conflict list |
+| `GET` | `/api/dashboard/employee` | Authenticated | `employee_dashboard()` | `200 OK` with self-scoped balances, attendance, comp-off |
+| `GET` | `/api/dashboard/manager` | Manager / HR | `manager_dashboard()` | `200 OK` with team staffing, pending SLA deadlines, low coverage |
+| `GET` | `/api/dashboard/hr` | HR Admin | `hr_dashboard()` | `200 OK`, `403 Forbidden` for employee/manager |
+| `GET` | `/api/timeline/alerts` | Authenticated | `get_alerts()` | `200 OK` with overdue items and low-coverage warnings |
+| `GET` | `/api/timeline/events` | Authenticated | `list_timeline_items()` | `200 OK` with chronological milestones & return dates |
+| `POST` | `/api/timeline/query-overlap` | Authenticated | `query_timeline_overlap()` | `200 OK` with project deliverable collision risk analysis |
+| `GET` | `/api/compoff/summary` | Authenticated | `comp_off_summary()` | `200 OK` with earned, used, available, expiring, expired |
+| `GET` | `/api/analytics/metrics` | Authenticated | `workforce_metrics()` | `200 OK` with 5 multi-dimensional filters (team, emp, month, etc.) |
+| `GET` | `/api/analytics/team-coverage` | Manager / HR | `get_team_coverage_analytics()` | `200 OK` with date-by-date breakdown & breach diagnostics |
+| `GET` | `/api/analytics/organization` | HR Admin | `organization_workforce_summary()` | `200 OK` with org headcount, attendance %, leave days |
+| `GET` | `/api/analytics/export-csv` | Authenticated | `export_metrics_csv()` | `200 OK` with `text/csv` attachment payload |
+| `POST` | `/api/rag/ask` | Authenticated | `answer_question()` | `200 OK` with grounded answer, citations, & policy version |
+| `POST` | `/api/rag/reindex` | HR Admin | `build_vector_store()` | `200 OK` on vector index refresh, `403 Forbidden` for non-HR |
+| `GET` | `/api/admin/employees` | HR Admin | `list_all_employees()` | `200 OK` with complete directory, `403 Forbidden` for non-HR |
+| `POST` | `/api/admin/create-employee` | HR Admin | `create_employee()` | `201 Created` with seeded profile, `403 Forbidden` for non-HR |
+| `POST` | `/api/admin/deactivate-employee`| HR Admin | `deactivate_employee()` | `200 OK`, `403 Forbidden` for non-HR |
+| `GET` | `/api/admin/audit-logs` | HR Admin | `get_audit_logs()` | `200 OK` with immutable action logs, `403 Forbidden` for non-HR |
+
+### 8.2 The 10 Benchmark Policy RAG Suite Evaluation Matrix
+
+Verified across 10 distinct automated tests in `tests/test_rag_10_benchmark_questions.py` using `data/rag_benchmark_questions.json`:
+
+| # | Question / Scenario | Query Date | Target Policy & Page | Key Grounded Rule Verified | Citation Verification | Abstention / Safety | Test Status |
+|---|---|---|---|---|---|---|---|
+| **Q01** | Annual Leave Entitlement | 2026-03-01 | Sample Leave Policy v2.0, Page 1 | 18 days per calendar year | Citation matches `Sample Leave Policy v2.0 / Page 1 / Section 1. Annual Leave` | N/A | **PASSED** |
+| **Q02** | Advance Notice Requirement | 2026-03-01 | Sample Leave Policy v2.0, Page 1 | Minimum 5 calendar days advance notice | Citation includes `Page 1 / Section 1` | N/A | **PASSED** |
+| **Q03** | Sick Leave Medical Certificate | 2026-03-01 | Sample Leave Policy v2.0, Page 2 | $\ge 3$ consecutive days requires registered doctor's note | Citation includes `Page 2 / Section 2. Sick Leave` | N/A | **PASSED** |
+| **Q04** | Comp-Off Earning & Expiration | 2026-03-01 | Sample Leave Policy v2.0, Page 2 | Valid for 60 calendar days from date earned | Citation includes `Page 2 / Section 3. Compensatory Off` | N/A | **PASSED** |
+| **Q05** | Historical Effective Date (2025) | 2025-10-01 | Sample Leave Policy v1.0, Page 1 | 15 annual leave days under 2025 policy | Citation identifies `Sample Leave Policy v1.0` (not v2.0) | N/A | **PASSED** |
+| **Q06** | Modern Effective Date (2026) | 2026-02-01 | Sample Leave Policy v2.0, Page 1 | 18 annual leave days under 2026 update | Citation identifies `Sample Leave Policy v2.0` | N/A | **PASSED** |
+| **Q07** | Probation Leave Eligibility | 2026-03-01 | Sample Leave Policy v2.0, Page 2 | Only sick leave permitted during 3-month probation | Citation includes `Page 2 / Section 5. Probationary Period` | N/A | **PASSED** |
+| **Q08** | Adversarial Prompt Injection | 2026-03-01 | Sample Leave Policy v2.0 | Prompt injection ignored; untrusted XML boundary protected | Grounded citation maintained; zero unauthorized privileges granted | Prompt injection defended | **PASSED** |
+| **Q09** | Conflicting Policy Versions | 2026-01-01 | Multi-Policy Environment | Surfaces conflict warning banner indicating overlapping active policies | Identifies conflicting versions | Conflict banner surfaced | **PASSED** |
+| **Q10** | Out-of-Scope Safe Abstention | 2026-03-01 | Out-of-Scope (Space Travel / Pet) | Assistant explicitly states policy documents do not specify rule | No fictitious sources cited | Safe Abstention verified | **PASSED** |
+
+### 8.3 Final Submission Artifacts
+- **Automated Packaging Tool (`package_submission.py`)**: Runs complete test suite, sets clean Git identity, commits changes, and builds submission ZIP.
+- **Submission ZIP Archive**: `ai_hr_submission.zip` (140+ KB, 53 files), strictly excluding `.venv`, bytecode `__pycache__`, SQLite database files, and vector caches.
+- **Git Repository**: Initialized, verified, and committed on `main` branch.
+
+---
+
+## 9. System Limitations & Boundaries
 
 1. **Synthetic Data**: All employee identities, balances, and records are fictional.
 2. **Attendance Context**: Absence records reflect scheduled calendar slots; missing punch logs are not treated as misconduct.

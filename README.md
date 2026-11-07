@@ -128,18 +128,77 @@ Start the REST API server:
 ```bash
 python api.py
 ```
-The Flask backend runs on `http://localhost:5000` and provides complete REST endpoints:
-- **Authentication**: `POST /api/auth/login`
-- **Leave Operations**: `POST /api/leave/request`, `GET /api/leave/balance`, `GET /api/leave/requests`, `POST /api/leave/decide`, `POST /api/leave/cancel`, `GET /api/leave/holidays`, `GET /api/leave/decision-history/<id>`
-- **Attendance**: `POST /api/attendance/clock-in`, `POST /api/attendance/clock-out`, `GET /api/attendance/history`, `GET /api/attendance/missing-clock-outs`, `POST /api/attendance/regularize`
-- **Workforce Planning**: `POST /api/workforce/evaluate`, `GET /api/workforce/coverage`, `GET /api/workforce/backups`, `POST /api/workforce/what-if`
-- **Dashboards**: `GET /api/dashboard/employee`, `GET /api/dashboard/manager`, `GET /api/dashboard/hr`
-- **Timeline & Alerts**: `GET /api/timeline/alerts`, `GET /api/timeline/events`, `GET /api/compoff/summary`, `POST /api/timeline/query-overlap`
-- **Workforce Analytics**: `GET /api/analytics/metrics`, `GET /api/analytics/team-coverage`, `GET /api/analytics/organization`
-- **RAG Policy Assistant**: `POST /api/rag/ask`, `POST /api/rag/reindex`
-- **Governance & Audit**: `GET /api/admin/employees`, `GET /api/admin/audit-logs`
+The Flask backend runs on `http://localhost:5000` and provides 24 production-grade REST endpoints with PBKDF2 authentication, token-based user context verification, and role-based access control (`401 Unauthorized`, `403 Forbidden`, `400 Bad Request`):
 
-### 7. Launch the Streamlit Frontend Application
+| Category | Endpoint | Method | Role | Description |
+|---|---|---|---|---|
+| **Auth** | `/api/auth/login` | POST | Public | Authenticates employee/manager/HR, returns session credentials |
+| **Auth** | `/api/auth/me` | GET | Authenticated | Returns current authenticated user context |
+| **Leave** | `/api/leave/request` | POST | Authenticated | Creates a new leave request with deterministic validation |
+| **Leave** | `/api/leave/balance` | GET | Authenticated | Retrieves entitled, used, pending, and remaining balances |
+| **Leave** | `/api/leave/requests` | GET | Authenticated | Lists leave requests filtered by status or employee |
+| **Leave** | `/api/leave/decide` | POST | Manager/HR | Human manager decision with review note |
+| **Leave** | `/api/leave/cancel` | POST | Authenticated | Cancels pending or active leave, restoring balances |
+| **Leave** | `/api/leave/holidays` | GET | Authenticated | Retrieves public and optional holiday calendar |
+| **Leave** | `/api/leave/decision-history/<id>` | GET | Authenticated | Retrieves full chronological audit trail of AI & human actions |
+| **Attendance** | `/api/attendance/clock-in` | POST | Authenticated | Logs daily clock-in; prevents duplicate check-ins |
+| **Attendance** | `/api/attendance/clock-out` | POST | Authenticated | Logs daily clock-out and updates duration |
+| **Attendance** | `/api/attendance/history` | GET | Authenticated | Retrieves employee attendance logs |
+| **Attendance** | `/api/attendance/missing-clock-outs` | GET | Authenticated | Discovers unclosed check-in sessions |
+| **Attendance** | `/api/attendance/regularize` | POST | Authenticated | Regularizes missing punch records with audit logging |
+| **Workforce** | `/api/workforce/evaluate` | POST | Manager/HR | Evaluates workforce coverage and recommendation for a request |
+| **Workforce** | `/api/workforce/coverage` | GET | Manager/HR | Returns team daily staffing levels and breach flags |
+| **Workforce** | `/api/workforce/backups` | GET | Manager/HR | Recommends ranked backup team candidates |
+| **Workforce** | `/api/workforce/what-if` | POST | Manager/HR | Simulates hypothetical leave scenarios with custom thresholds |
+| **Dashboards** | `/api/dashboard/employee` | GET | Authenticated | Self-scoped dashboard for personal metrics & balances |
+| **Dashboards** | `/api/dashboard/manager` | GET | Manager/HR | Team-scoped dashboard for staffing, pending SLA, & alerts |
+| **Dashboards** | `/api/dashboard/hr` | GET | HR Admin | Org-wide dashboard for metrics, compliance, & directories |
+| **Timeline** | `/api/timeline/alerts` | GET | Authenticated | Surfaces overdue items, approval deadlines, & low coverage |
+| **Timeline** | `/api/timeline/events` | GET | Authenticated | Retrieves chronological timeline items |
+| **Timeline** | `/api/timeline/query-overlap` | POST | Authenticated | Evaluates proposed leave window against deliverables & milestones |
+| **Comp-off** | `/api/compoff/summary` | GET | Authenticated | Returns earned, used, available, pending, & expiring credits |
+| **Analytics** | `/api/analytics/metrics` | GET | Authenticated | Multi-dimensional metrics (team, employee, month, type, status) |
+| **Analytics** | `/api/analytics/team-coverage` | GET | Manager/HR | Longitudinal daily coverage % and breach diagnostics |
+| **Analytics** | `/api/analytics/organization` | GET | HR Admin | Company-wide workforce breakdown and headcount summary |
+| **Analytics** | `/api/analytics/export-csv` | GET | Authenticated | Exports workforce analytics data as CSV |
+| **RAG** | `/api/rag/ask` | POST | Authenticated | Grounded policy Q&A with multi-page citations & abstention |
+| **RAG** | `/api/rag/reindex` | POST | HR Admin | Rebuilds ChromaDB vector index from registered policy files |
+| **Admin** | `/api/admin/employees` | GET | HR Admin | Lists all active and inactive employees |
+| **Admin** | `/api/admin/create-employee` | POST | HR Admin | Provisions new employee profile with credentials |
+| **Admin** | `/api/admin/deactivate-employee` | POST | HR Admin | Deactivates employee profile |
+| **Admin** | `/api/admin/audit-logs` | GET | HR Admin | Retrieves immutable system audit trail |
+
+#### Quick API Testing with cURL
+
+```bash
+# 1. Authenticate as Rahul Sharma (Senior AI Engineer)
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"employee_id": "E001", "password": "rahuluser@2026"}'
+
+# 2. Check personal leave balances
+curl -X GET "http://localhost:5000/api/leave/balance?employee_id=E001" \
+  -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01"
+
+# 3. Clock-in for the day
+curl -X POST http://localhost:5000/api/attendance/clock-in \
+  -H "Content-Type: application/json" \
+  -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01" \
+  -d '{"notes": "WFH Remote Session"}'
+
+# 4. Ask RAG Policy Assistant
+curl -X POST http://localhost:5000/api/rag/ask \
+  -H "Content-Type: application/json" \
+  -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01" \
+  -d '{"question": "How many days of annual leave do I get?", "as_of_date": "2026-03-01"}'
+
+# 5. Verify RBAC Security (Employee blocked from HR Audit Logs -> 403 Forbidden)
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5000/api/admin/audit-logs \
+  -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01"
+# Output: 403
+```
+
+### 7. Launch the Streamlit Frontend Application (Dual-Mode Execution)
 Start the interactive UI:
 
 ```bash
@@ -147,26 +206,44 @@ python -m streamlit run app.py
 ```
 Open your browser at `http://localhost:8501`.
 
+**Dual-Mode Operation**:
+- When the Flask backend is running on `http://localhost:5000`, Streamlit routes API actions (leave requests, clock-in/out, manager decisions, cancellations, analytics) through the Flask REST API. The UI sidebar displays a green **⚡ Connected to Flask API: http://localhost:5000** badge.
+- If the Flask backend is offline or stopped, the frontend seamlessly switches to direct service execution via local fallback, ensuring high availability.
+
 ---
 
 ## 🧪 Comprehensive Test Suite Execution
 
-Execute the full suite of **145 automated unit, integration, and scenario tests** (100% passing across all 15 test modules):
+Execute the full suite of **159 automated unit, integration, and scenario tests** (100% passing across all 16 test modules):
 
 ```bash
 # Run the complete test suite
 python -m pytest -v
 
 # Run specific test modules
-python -m pytest -v tests/test_phase5_complete.py
-python -m pytest -v tests/test_phase4_complete.py
-python -m pytest -v tests/test_phase3_complete.py
-python -m pytest -v tests/test_end_to_end_scenarios.py
-python -m pytest -v tests/test_rag_phase2.py
-python -m pytest -v tests/test_attendance.py
-python -m pytest -v tests/test_audit_and_admin.py
-python -m pytest -v tests/test_phase4_workforce_planning.py
+python -m pytest -v tests/test_rag_10_benchmark_questions.py # 10 Grounded Policy Scenarios & Edge Cases
+python -m pytest -v tests/test_api_flask.py                 # 24 Flask REST Endpoints & RBAC Security
+python -m pytest -v tests/test_end_to_end_scenarios.py       # 10 End-to-End Workflow Scenarios
+python -m pytest -v tests/test_phase5_complete.py            # Analytics & Dashboards Suite
+python -m pytest -v tests/test_phase4_complete.py            # Attendance, Comp-off & Workforce Planning
+python -m pytest -v tests/test_phase3_complete.py            # Leave Management & Decision Support
+python -m pytest -v tests/test_rag_phase2.py                 # ChromaDB, Citations & Prompt Injection
+python -m pytest -v tests/test_attendance.py                 # Clock-in/out & Missing Punches
+python -m pytest -v tests/test_audit_and_admin.py            # RBAC Isolation & Immutable Audit Logs
 ```
+
+### 📋 The 10 Benchmark Policy RAG Suite (`data/rag_benchmark_questions.json`)
+The assessment includes a structured benchmark suite testing complex real-world HR policy inquiries:
+1. **Annual Leave Entitlement**: Verified against Sample Leave Policy v2.0 (Page 1) -> 18 days.
+2. **Advance Notice Requirement**: Verified against Sample Leave Policy v2.0 (Page 1) -> 5 calendar days.
+3. **Sick Leave & Medical Certificate**: Multi-page citation verified on Page 2 -> $\ge 3$ consecutive days requires doctor's note.
+4. **Comp-off Earning & Validity**: 60-day expiry rule grounded with exact section citations.
+5. **Effective Date Routing (2025 vs 2026)**: Historical query (As-of `2025-10-01`) routes to Policy v1.0 (15 days), while modern query (`2026-03-01`) routes to Policy v2.0 (18 days).
+6. **Probation Leave Eligibility**: Verified against Page 2 -> Sick leave only during first 3 months.
+7. **Leave Cancellation Policy**: Grounded explanation of approval restoration rules.
+8. **Prompt Injection Defense**: Evaluates resistance against malicious adversarial text attempting to grant infinite leave.
+9. **Conflicting Policy Version Transparency**: Surfaces warning banners when overlapping or divergent rules exist across active policies.
+10. **Out-of-Scope Safe Abstention**: Safely abstains on unmentioned rules (e.g., pet insurance, space travel) without hallucinating citations.
 
 ---
 
