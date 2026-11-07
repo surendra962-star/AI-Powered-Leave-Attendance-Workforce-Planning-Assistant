@@ -1,0 +1,123 @@
+[
+  {
+    "id": "Q01",
+    "category": "Annual Leave Entitlement (Current)",
+    "question": "How many annual leave days do employees receive per calendar year under the current policy?",
+    "as_of": "2026-10-31",
+    "expected_document": "Sample Leave Policy",
+    "expected_version": "2.0",
+    "expected_page": 1,
+    "expected_section": "1. Annual Leave",
+    "expected_keywords": ["18", "annual leave"],
+    "should_abstain": false
+  },
+  {
+    "id": "Q02",
+    "category": "Sick Leave Notice & Certification",
+    "question": "What is the advance notice requirement and medical certificate policy for sick leave?",
+    "as_of": "2026-10-31",
+    "expected_document": "Sample Leave Policy",
+    "expected_version": "2.0",
+    "expected_page": 1,
+    "expected_section": "2. Sick Leave",
+    "expected_keywords": ["advance notice is not required", "10", "no medical document"],
+    "should_abstain": false
+  },
+  {
+    "id": "Q03",
+    "category": "Advance Notice Period",
+    "question": "How much advance notice is required when submitting an annual leave request?",
+    "as_of": "2026-10-31",
+    "expected_document": "Sample Leave Policy",
+    "expected_version": "2.0",
+    "expected_page": 1,
+    "expected_section": "1. Annual Leave",
+    "expected_keywords": ["5 calendar days"],
+    "should_abstain": false
+  },
+  {
+    "id": "Q04",
+    "category": "Compensatory Off Validity",
+    "question": "What is the validity and expiration period for compensatory off days earned in 2026?",
+    "as_of": "2026-10-31",
+    "expected_document": "Sample Leave Policy",
+    "expected_version": "2.0",
+    "expected_page": 2,
+    "expected_section": "4. Compensatory Off",
+    "expected_keywords": ["90 calendar days", "expires"],
+    "should_abstain": false
+  },
+  {
+    "id": "Q05",
+    "category": "Historical Version Routing (2025)",
+    "question": "How many annual leave days were provided to employees in calendar year 2025?",
+    "as_of": "2025-06-15",
+    "expected_document": "Sample Leave Policy",
+    "expected_version": "1.0",
+    "expected_page": 1,
+    "expected_section": "Annual Leave",
+    "expected_keywords": ["15", "annual leave"],
+    "should_abstain": false
+  },
+  {
+    "id": "Q06",
+    "category": "Remote Work Allowance (PDF Page 2)",
+    "question": "How many days per week are employees permitted to work remotely?",
+    "as_of": "2026-10-31",
+    "expected_document": "Attendance and Remote Work Policy",
+    "expected_version": "1.0",
+    "expected_page": 2,
+    "expected_section": "Remote Work and Flexible Schedules",
+    "expected_keywords": ["2 days per week", "remote"],
+    "should_abstain": false
+  },
+  {
+    "id": "Q07",
+    "category": "Core Working Hours & Attendance (PDF Page 1)",
+    "question": "What are the company core working hours and attendance check-in rules?",
+    "as_of": "2026-10-31",
+    "expected_document": "Attendance and Remote Work Policy",
+    "expected_version": "1.0",
+    "expected_page": 1,
+    "expected_section": "Core Working Hours and Attendance",
+    "expected_keywords": ["9:00 AM", "5:00 PM", "check-in"],
+    "should_abstain": false
+  },
+  {
+    "id": "Q08",
+    "category": "Working Days and Holidays Exclusion",
+    "question": "How are Saturdays, Sundays, and designated public holidays treated when calculating leave duration?",
+    "as_of": "2026-10-31",
+    "expected_document": "Sample Leave Policy",
+    "expected_version": "2.0",
+    "expected_page": 1,
+    "expected_section": "3. Working Days and Holidays",
+    "expected_keywords": ["excluded", "Saturdays", "Sundays", "public holidays"],
+    "should_abstain": false
+  },
+  {
+    "id": "Q09",
+    "category": "Conflicting Policies & Effective Dates",
+    "question": "What annual leave entitlement applies on a date when both v1.0 and v2.0 overlap?",
+    "as_of": "2026-01-01",
+    "expected_document": "Sample Leave Policy",
+    "expected_version": "2.0",
+    "expected_page": 1,
+    "expected_section": "1. Annual Leave",
+    "expected_keywords": ["18"],
+    "should_abstain": false
+  },
+  {
+    "id": "Q10",
+    "category": "Out-of-Scope Abstention",
+    "question": "What is the company reimbursement policy for commercial flights to Mars or lunar space stations?",
+    "as_of": "2026-10-31",
+    "expected_document": null,
+    "expected_version": null,
+    "expected_page": null,
+    "expected_section": null,
+    "expected_keywords": ["cannot find", "not available", "unsupported", "abstain", "does not contain"],
+    "should_abstain": true
+  }
+]
+
