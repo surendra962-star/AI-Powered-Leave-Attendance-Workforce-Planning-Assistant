@@ -1,5 +1,6 @@
 """Flask REST API backend for the AI-Powered Leave, Attendance & Workforce Planning Assistant."""
 from __future__ import annotations
+import os
 from datetime import date
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -736,4 +737,5 @@ def query_audit_logs():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.getenv("FLASK_PORT", 5001))
+    app.run(host="0.0.0.0", port=port, debug=True)

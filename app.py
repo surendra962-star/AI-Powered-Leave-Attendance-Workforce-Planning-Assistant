@@ -137,7 +137,7 @@ with st.sidebar:
     api_client = FlaskAPIClient()
     flask_connected = api_client.is_healthy()
     if flask_connected:
-        st.success("🟢 Flask REST API: Connected (`:5000`)")
+        st.success("🟢 Flask REST API: Connected (`:5001`)")
     else:
         st.info("🟡 Backend: Direct Python Service Mode")
 

@@ -11,7 +11,7 @@ import requests
 
 from access_control.service import UserContext
 
-DEFAULT_API_BASE_URL = os.getenv("FLASK_API_URL", "http://127.0.0.1:5000")
+DEFAULT_API_BASE_URL = os.getenv("FLASK_API_URL", "http://127.0.0.1:5001")
 
 
 class FlaskAPIClient:

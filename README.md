@@ -128,7 +128,7 @@ Start the REST API server:
 ```bash
 python api.py
 ```
-The Flask backend runs on `http://localhost:5000` and provides 24 production-grade REST endpoints with PBKDF2 authentication, token-based user context verification, and role-based access control (`401 Unauthorized`, `403 Forbidden`, `400 Bad Request`):
+The Flask backend runs on `http://localhost:5001` and provides 24 production-grade REST endpoints with PBKDF2 authentication, token-based user context verification, and role-based access control (`401 Unauthorized`, `403 Forbidden`, `400 Bad Request`):
 
 | Category | Endpoint | Method | Role | Description |
 |---|---|---|---|---|
@@ -172,28 +172,28 @@ The Flask backend runs on `http://localhost:5000` and provides 24 production-gra
 
 ```bash
 # 1. Authenticate as Rahul Sharma (Senior AI Engineer)
-curl -X POST http://localhost:5000/api/auth/login \
+curl -X POST http://localhost:5001/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"employee_id": "E001", "password": "rahuluser@2026"}'
 
 # 2. Check personal leave balances
-curl -X GET "http://localhost:5000/api/leave/balance?employee_id=E001" \
+curl -X GET "http://localhost:5001/api/leave/balance?employee_id=E001" \
   -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01"
 
 # 3. Clock-in for the day
-curl -X POST http://localhost:5000/api/attendance/clock-in \
+curl -X POST http://localhost:5001/api/attendance/clock-in \
   -H "Content-Type: application/json" \
   -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01" \
   -d '{"notes": "WFH Remote Session"}'
 
 # 4. Ask RAG Policy Assistant
-curl -X POST http://localhost:5000/api/rag/ask \
+curl -X POST http://localhost:5001/api/rag/ask \
   -H "Content-Type: application/json" \
   -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01" \
   -d '{"question": "How many days of annual leave do I get?", "as_of_date": "2026-03-01"}'
 
 # 5. Verify RBAC Security (Employee blocked from HR Audit Logs -> 403 Forbidden)
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5000/api/admin/audit-logs \
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5001/api/admin/audit-logs \
   -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01"
 # Output: 403
 ```
@@ -207,7 +207,7 @@ python -m streamlit run app.py
 Open your browser at `http://localhost:8501`.
 
 **Dual-Mode Operation**:
-- When the Flask backend is running on `http://localhost:5000`, Streamlit routes API actions (leave requests, clock-in/out, manager decisions, cancellations, analytics) through the Flask REST API. The UI sidebar displays a green **⚡ Connected to Flask API: http://localhost:5000** badge.
+- When the Flask backend is running on `http://localhost:5001`, Streamlit routes API actions (leave requests, clock-in/out, manager decisions, cancellations, analytics) through the Flask REST API. The UI sidebar displays a green **⚡ Connected to Flask API: http://localhost:5001** badge.
 - If the Flask backend is offline or stopped, the frontend seamlessly switches to direct service execution via local fallback, ensuring high availability.
 
 ---

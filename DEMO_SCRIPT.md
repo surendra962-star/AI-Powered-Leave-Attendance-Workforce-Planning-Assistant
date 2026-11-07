@@ -4,7 +4,7 @@
 **Target Presentation Time**: 8–10 Minutes  
 **Prerequisites**:
 1. Activate environment: `source .venv/bin/activate`
-2. Start Flask REST API backend: `python api.py` (Runs on `http://localhost:5000`)
+2. Start Flask REST API backend: `python api.py` (Runs on `http://localhost:5001`)
 3. Start Streamlit frontend: `python -m streamlit run app.py` (Opens `http://localhost:8501`)
 
 ---
@@ -25,16 +25,16 @@
 - **Actions in Terminal**:
   ```bash
   # 1. Authenticate as Rahul Sharma (Senior AI Engineer)
-  curl -s -X POST http://localhost:5000/api/auth/login \
+  curl -s -X POST http://localhost:5001/api/auth/login \
     -H "Content-Type: application/json" \
     -d '{"employee_id": "E001", "password": "rahuluser@2026"}' | jq .
 
   # 2. Query personal leave balance via REST API
-  curl -s -X GET "http://localhost:5000/api/leave/balance?employee_id=E001" \
+  curl -s -X GET "http://localhost:5001/api/leave/balance?employee_id=E001" \
     -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01" | jq .
 
   # 3. Demonstrate RBAC Security Isolation (Employee blocked from HR Audit Logs -> 403 Forbidden)
-  curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5000/api/admin/audit-logs \
+  curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5001/api/admin/audit-logs \
     -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01"
   # Terminal prints: 403
   ```
@@ -46,7 +46,7 @@
 ### Step 3: Employee Workspace Demonstration (2 Minutes)
 - **Login Credentials**: `E001` / `rahuluser@2026` (Rahul Sharma, Senior AI Engineer)
 - **Actions in Streamlit**:
-  1. **Dual-Mode Indicator**: Point out the green badge in the sidebar: `⚡ Connected to Flask API: http://localhost:5000`.
+  1. **Dual-Mode Indicator**: Point out the green badge in the sidebar: `⚡ Connected to Flask API: http://localhost:5001`.
   2. **Personal Dashboard**: Inspect separate leave balances (Annual: entitled 18, used, pending, remaining, available), attendance summary, and comp-off credits.
   3. **Daily Clock-In**: In **Attendance Management**, click **🕒 Clock In Today**. Show that the punch timestamp is logged immediately. Demonstrate duplicate clock-in prevention by attempting to click it again (warning displayed).
   4. **Leave Application**: Navigate to **Apply for Leave**:
