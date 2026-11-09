@@ -44,44 +44,29 @@ Managers and HR are the human decision-makers. Recommendations, coverage calcula
 
 ## Architecture
 
-```text
-Employee / Manager / HR
-          |
-          v
-+----------------------+
-| Streamlit UI         |
-| app.py               |
-+----------+-----------+
-           |
-           | Flask HTTP/JSON or direct-service fallback
-           v
-+----------------------+
-| Flask REST API       |
-| api.py / api_client.py|
-+----------+-----------+
-           |
-           v
-+----------------------+
-| Python Services      |
-| Access control       |
-| Leave management     |
-| Attendance           |
-| Workforce planning   |
-| Dashboards / analytics |
-| Timeline / audit     |
-+----------+-----------+
-           |                         +-------------------------+
-           v                         | Policy documents       |
-+----------------------+             | PDF / Markdown files   |
-| SQLite database      |             +-----------+-------------+
-| hr_assistant.db      |                         |
-+----------------------+                         v
-                                      +-------------------------+
-                                      | Sentence Transformers   |
-                                      | ChromaDB retrieval      |
-                                      | Effective-date routing  |
-                                      | Optional Ollama answer  |
-                                      +-------------------------+
+```mermaid
+flowchart TB
+    people["Employees · Managers · HR"]
+    ui["Streamlit UI<br/>app.py"]
+    api["Flask REST API<br/>api.py"]
+    services["HR services<br/>Access control · Leave · Attendance<br/>Workforce planning · Dashboards<br/>Timeline · Analytics · Audit"]
+    database[("SQLite<br/>HR and operational records")]
+    policies["Policy documents<br/>PDF · Markdown"]
+    rag["RAG pipeline<br/>Chunking · Sentence Transformers<br/>ChromaDB · Effective-date routing"]
+    ollama["Ollama<br/>Grounded answer generation"]
+    decision["Manager / HR review<br/>Final human decision"]
+
+    people --> ui
+    ui -->|"HTTP / JSON"| api
+    ui -.->|"Direct-service fallback"| services
+    api --> services
+    services <--> database
+    policies --> rag
+    api -->|"Retrieve policy evidence"| rag
+    rag -.->|"Optional generation"| ollama
+    rag -->|"Citations and evidence"| api
+    api --> ui
+    services -->|"Recommendations; no auto-approval"| decision
 ```
 
 ## Requirements
