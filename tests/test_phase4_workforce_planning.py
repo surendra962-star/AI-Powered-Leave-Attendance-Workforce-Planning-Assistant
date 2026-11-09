@@ -109,33 +109,3 @@ def test_evaluation_rejects_already_decided_request(db):
         conn.execute("UPDATE leave_requests SET status='declined' WHERE request_id=1")
     with pytest.raises(LeaveError, match="Only pending"):
         evaluate_leave_request(1, "2026-11-02", db, persist=False)
-
-
-def test_simulate_what_if_leave_feasible_and_breach(db):
-    from workforce_planning.service import simulate_what_if_leave
-
-    # Test feasible single person leave when threshold is 60% and team has 5 members (4/5 = 80%)
-    res_feasible = simulate_what_if_leave(
-        team_id="T1",
-        candidate_employee_ids=["E2"],
-        start_date="2026-11-23",  # Mon
-        end_date="2026-11-24",    # Tue
-        threshold_percent=60,
-        db_path=db
-    )
-    assert res_feasible["is_feasible"] is True
-    assert res_feasible["breach_days_count"] == 0
-    assert res_feasible["lowest_simulated_coverage_percent"] == 80.0
-
-    # Test breach when multiple members are absent (E2, E3, E4 -> 2/5 = 40% < 60%)
-    res_breach = simulate_what_if_leave(
-        team_id="T1",
-        candidate_employee_ids=["E2", "E3", "E4"],
-        start_date="2026-11-23",
-        end_date="2026-11-24",
-        threshold_percent=60,
-        db_path=db
-    )
-    assert res_breach["is_feasible"] is False
-    assert res_breach["breach_days_count"] == 2
-    assert res_breach["lowest_simulated_coverage_percent"] == 40.0

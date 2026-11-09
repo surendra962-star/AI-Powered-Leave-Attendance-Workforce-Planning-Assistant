@@ -218,6 +218,97 @@ def test_policy_update_correctly_refreshes_chromadb(tmp_path):
     assert "18 annual leave days" not in res2[0]["text"]
 
 
+def test_search_respects_requested_result_limit(tmp_path):
+    class FixedVectors(list):
+        def tolist(self):
+            return list(self)
+
+    class FixedModel:
+        def encode(self, texts, normalize_embeddings=True):
+            return FixedVectors([[1.0, 0.0] for _ in texts])
+
+    chunks = [
+        Chunk(
+            id=f"chunk-{index}",
+            text=f"Annual leave policy section {index}",
+            policy_id=1,
+            title="Leave Policy",
+            version="1.0",
+            section=f"Section {index}",
+            effective_from="2026-01-01",
+            effective_to="",
+            is_active=True,
+            source="policy.md",
+            page=1,
+        )
+        for index in range(8)
+    ]
+    index_dir = tmp_path / "limited_chroma"
+    model = FixedModel()
+    rebuild(chunks, index_dir, model=model)
+
+    results = search(
+        "annual leave",
+        index_dir,
+        model=model,
+        n=3,
+        policy_ids=[1],
+    )
+
+    assert len(results) == 3
+
+
+def test_ollama_generation_is_bounded_and_kept_warm():
+    hit = {
+        "text": "Managers should review leave requests within 3 business days.",
+        "distance": 0.2,
+        "metadata": {
+            "title": "Sample Leave Policy",
+            "version": "2.0",
+            "section": "5. Approval and Escalation",
+            "source": "leave_policy_v2.md",
+            "page": 2,
+        },
+    }
+    with patch("rag.assistant.search", return_value=[hit]), \
+         patch("ollama.chat", return_value={"message": {"content": "Managers review requests within 3 business days [1]."}}) as chat:
+        ask(
+            "What does the policy say about the approval timeline?",
+            on=date(2026, 10, 31),
+        )
+
+    assert chat.call_args.kwargs["options"] == {"num_predict": 128}
+    assert chat.call_args.kwargs["keep_alive"] == "10m"
+
+
+def test_manager_review_timeline_answer_is_deterministic():
+    result = ask(
+        "What is the timeline for a manager to review a leave request?",
+        on=date(2026, 10, 31),
+        generator=lambda _system, _prompt: "This generator result should not replace the policy rule.",
+    )
+
+    assert "3 business days" in result["answer"]
+    assert result["sources"]
+    assert result["sources"][0]["section"] == "5. Approval and Escalation"
+
+
+def test_internal_leave_process_is_registered_and_chunked():
+    process = next(
+        policy for policy in load_policies()
+        if policy.title == "Synthetic Leave Request Process"
+    )
+    chunks = split_policy(process)
+
+    assert process.version == "1.0"
+    assert process.path.name == "leave_request_process.md"
+    assert any(
+        "Escalation Procedure" in chunk.section
+        and "Human review is required" in chunk.text
+        for chunk in chunks
+    )
+
+
 def test_untrusted_content_and_prompt_injection_defense():
     """Item 7: Treat uploaded policy documents as untrusted content, not instructions."""
     # Malicious injection text in an untrusted policy document

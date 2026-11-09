@@ -148,4 +148,3 @@ CREATE TABLE IF NOT EXISTS timeline_items (
     created_on TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_timeline_due ON timeline_items(due_on, item_type);
-

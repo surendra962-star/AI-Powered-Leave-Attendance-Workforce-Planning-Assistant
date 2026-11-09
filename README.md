@@ -1,276 +1,391 @@
 # AI-Powered Leave, Attendance & Workforce Planning Assistant
 
-A comprehensive, production-grade AI-powered HR Assistant built on Python 3.9, SQLite, ChromaDB, local Ollama LLMs, and Streamlit. The application strictly adheres to the principle of **human-in-the-loop decision authority**: all leave calculations, balances, working days, attendance, and workforce coverage metrics are determined deterministically, while the AI RAG assistant provides fully grounded, cited answers to HR policy questions without autonomous decision-making.
+## Project Title and Overview
 
----
+The **AI-Powered Leave, Attendance & Workforce Planning Assistant** is a local HR demonstration application for employees, managers, and HR administrators. It combines deterministic HR business rules with a grounded policy assistant.
 
-## 🏛️ System Architecture
+The application supports leave requests and decisions, attendance regularization, comp-off tracking, team coverage planning, policy questions, dashboards, audit records, and CSV reporting. Python and SQLite perform the operational calculations; the language model only summarizes retrieved policy evidence and never approves leave or makes attendance decisions.
+
+## Main Features
+
+- **Leave management:** Apply, cancel, and review leave requests; validate notice and overlaps; calculate working days; track balances and approval deadlines.
+- **Attendance:** Record clock-in and clock-out times, view attendance history, regularize missing punches, and calculate monthly summaries.
+- **Comp-off:** Record earned and used comp-off days, track validity dates, and report expired or available balances.
+- **Workforce planning:** Analyze team coverage, rank backup candidates, assess deadlines and capacity, and surface timeline alerts.
+- **Policy assistant:** Retrieve policies by effective date, cite exact source versions, identify conflicts, and abstain from unsupported answers.
+- **Dashboards:** Provide role-specific views for employees, managers, and HR, including metrics and operational risks.
+- **Reporting and audit:** Export dashboard data and maintain leave decision, access, and system audit trails.
+
+## User Roles
+
+| Role | Main capabilities |
+|---|---|
+| Employee | View personal attendance, leave balances, leave requests, comp-off, deadlines, and team-relevant information; submit and cancel eligible leave requests; ask policy questions. |
+| Manager | Perform employee capabilities plus review team leave requests, approve or decline requests, view team coverage and backups, regularize team attendance, and manage team timelines. |
+| HR | Administer employees and HR records, view organization-wide dashboards and audit logs, review workforce information, and oversee the demo system. |
+
+Managers and HR are the human decision-makers. Recommendations, coverage calculations, and policy retrieval do not make autonomous approval decisions.
+
+## Technology Stack
+
+| Component | Technology |
+|---|---|
+| Frontend | Streamlit |
+| REST API | Flask |
+| Programming language | Python |
+| Relational data | SQLite |
+| Vector policy retrieval | ChromaDB |
+| Embedding model | Sentence Transformers `all-MiniLM-L6-v2` |
+| Optional local answer generation | Ollama with `llama3.2` |
+| Policy files | Markdown and PDF through pypdf |
+| Analytics and reporting | Pandas |
+| Authentication | Salted PBKDF2-HMAC-SHA256 |
+| Testing | pytest |
+
+## Architecture
 
 ```text
-                                 [ User / Examiner ]
-                                          │
-                                          ▼
-                       [ Streamlit Web Application (app.py) ]
-                                          │
-                 ┌────────────────────────┴────────────────────────┐
-                 ▼                                                 ▼
-      [ Authentication & RBAC ]                         [ HR Policy RAG Assistant ]
-      (PBKDF2 Salted Hashes,                            (Semantic + Keyword Retrieval,
-       UserContext Session Guard)                        ChromaDB Vector Store)
-                 │                                                 │
-                 ▼                                                 ▼
-      [ Core Backend Services ]                         [ Local Ollama Inference ]
-      ├── Leave Management (Working Days, Overlaps)      (Llama 3.2 Local LLM,
-      ├── Attendance (Clock-In/Out, Monthly %, CSV)      Grounded Citations & Abstention)
-      ├── Comp-off & Holiday Tracking
-      ├── Workforce Planning & Backup Identification
-      ├── Timeline, Deadlines & In-App Alerts
-      └── Workforce Analytics (Pandas + Aggregations)
-                 │
-                 ▼
-       [ SQLite Database (hr_assistant.db) ]
-       (Foreign Keys, ACID Transactions, Indexes, Audit Logs)
+Employee / Manager / HR
+          |
+          v
++----------------------+
+| Streamlit UI         |
+| app.py               |
++----------+-----------+
+           |
+           | Flask HTTP/JSON or direct-service fallback
+           v
++----------------------+
+| Flask REST API       |
+| api.py / api_client.py|
++----------+-----------+
+           |
+           v
++----------------------+
+| Python Services      |
+| Access control       |
+| Leave management     |
+| Attendance           |
+| Workforce planning   |
+| Dashboards / analytics |
+| Timeline / audit     |
++----------+-----------+
+           |                         +-------------------------+
+           v                         | Policy documents       |
++----------------------+             | PDF / Markdown files   |
+| SQLite database      |             +-----------+-------------+
+| hr_assistant.db      |                         |
++----------------------+                         v
+                                      +-------------------------+
+                                      | Sentence Transformers   |
+                                      | ChromaDB retrieval      |
+                                      | Effective-date routing  |
+                                      | Optional Ollama answer  |
+                                      +-------------------------+
 ```
 
-### Core Architectural Separations
-1. **Deterministic Business Logic**: All working day calculations (excluding weekends and public holidays), notice periods, leave overlap checks, balance deductions, attendance percentages, and team coverage thresholds are computed deterministically in pure Python and SQLite.
-2. **RAG Policy Retrieval**: HR policy documents (PDF and Markdown) are chunked, embedded with `sentence-transformers`, stored persistently in ChromaDB, and retrieved with strict semantic similarity thresholds.
-3. **LLM Response Generation**: The local Ollama LLM (`llama3.2`) answers strictly from retrieved context and cites document titles, versions, sections, and page numbers. It explicitly abstains on unsupported or unanswerable queries without hallucinating policy rules.
-4. **Human Decision Authority**: The assistant never autonomously approves or declines leave requests. Managers and HR personnel retain sole authority over final decisions.
+## Requirements
 
-## 🛠️ Technology Stack Specification
+- macOS, Linux, or Windows
+- Python 3.9 or newer; final local verification used Python 3.13.9
+- Python dependencies listed in [requirements.txt](requirements.txt)
+- Optional Ollama installation for generated natural-language answers
+- Internet access may be needed on first use to obtain the embedding model; subsequent retrieval depends on the local ChromaDB index
 
-The implementation strictly satisfies the specified architecture layers:
-
-| Layer | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Frontend** | Streamlit | Employee, Manager and HR dashboards |
-| **Backend** | Flask | REST APIs and request handling |
-| **Business logic** | Python | Leave, attendance and workforce rules |
-| **Relational database** | SQLite | Employee and HR records |
-| **Vector database** | ChromaDB | HR policy embeddings |
-| **Embedding model** | Sentence Transformers | Convert policy text into vectors |
-| **LLM** | Ollama – Llama 3.2 | Generate policy-based answers |
-| **PDF processing** | pypdf | Extract policy documents |
-| **Data processing** | Pandas | HR analytics |
-| **Testing** | Pytest | Unit and integration tests |
-
----
-
-## 🔑 Pre-Seeded Assessment Accounts & Credentials
-
-The application includes synthetic employees across three distinct roles with pre-configured credentials:
-
-| Role | Employee ID | Name | Team | Email | Password |
-|---|---|---|---|---|---|
-| **HR Administrator** | `HR001` | HR Admin | T01 | `hr.admin@company.test` | `hradmin@2026` |
-| **Engineering Manager** | `E005` | Kiran Rao | T01 | `kiran.rao@company.test` | `kiranmgr@2026` |
-| **Senior AI Engineer** | `E001` | Rahul Sharma | T01 | `rahul.sharma@company.test` | `rahuluser@2026` |
-| **Product Manager** | `E010` | Vikram Malhotra | T02 | `vikram.malhotra@company.test` | `vikrammgr@2026` |
-| **Product Analyst** | `E006` | Ravi Kumar | T02 | `ravi.kumar@company.test` | `raviuser@2026` |
-
-*Passwords are hashed using salted cryptographic digests stored in the `user_credentials` table.*
-
----
-
-## 🚀 Quickstart & Setup Guide
-
-### 1. Environment Activation
-The project is strictly compatible with **Python 3.9**. Use the existing virtual environment:
-
-```bash
-# Activate the virtual environment
-source .venv/bin/activate
-
-# Verify Python version (must be 3.9.x)
-python --version
-```
-
-### 2. Dependency Verification
-Install dependencies using the virtual environment interpreter:
+Install all Python dependencies with:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-### 3. Database Initialization & Seeding
-Initialize the SQLite schema, create tables, migrate indexes, and seed synthetic records:
+Optional Ollama setup:
 
 ```bash
-# Seed teams, employees, balances, holidays, deadlines, and credentials
-python -m database.seed
+ollama serve
+ollama pull llama3.2
+```
 
-# Verify table row counts
+If Ollama is unavailable, the policy assistant returns retrieved policy excerpts and citations.
+
+## Setup Instructions
+
+From the project root:
+
+Use a project virtual environment so dependencies remain isolated from the system Python.
+The `.venv/` directory is local-only and is excluded from GitHub.
+
+You may keep `.venv/` on your computer while developing and running the project. Before
+pushing to GitHub, do not add or commit it. It is intentionally excluded by `.gitignore`,
+so Git should not include it. Anyone downloading the repository can recreate the same
+environment using the setup commands below.
+
+### macOS or Linux
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m database.seed
+python rag_cli.py index
 python verify.py
 ```
 
-### 4. Policy Document Indexing (ChromaDB)
-Rebuild the local vector index from registered HR policy documents (PDF and Markdown):
+After activation, verify that Flask belongs to the virtual environment and then start the API:
 
 ```bash
+which python
+python -c "import sys, flask; print(sys.executable); print(flask.__version__)"
+python api.py
+```
+
+If `ModuleNotFoundError: No module named 'flask'` appears, do not launch the API first:
+
+```bash
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python api.py
+```
+
+### Windows PowerShell
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m database.seed
+python rag_cli.py index
+python verify.py
+```
+
+The initialized database is stored at `data/hr_assistant.db`. The generated policy vector index is stored at `data/chroma/`.
+Both locations are runtime artifacts and are not intended for GitHub.
+Recreate the database with `python -m database.seed` and rebuild the policy index with `python rag_cli.py index`.
+
+## Timeline and Reminders
+
+Timeline events are calculated and persisted for approval deadlines, project deadlines,
+return-to-work dates, notice deadlines, and other operational items. Alerts are exposed
+in the Streamlit **Timeline & Alerts** section and as a global alert banner for the active
+employee, manager, or HR user. Alerts consider the configured horizon and show only events
+within scope.
+
+This demonstration provides **in-app reminders only**. It does not send email, SMS, or push
+notifications. Generated alerts disappear from active reminder views only through their
+persisted timeline status and date rules; they are not browser notifications.
+
+## Evaluation Evidence
+
+- The complete pytest suite and its collected/pass/fail/skip counts are recorded in
+  [EVALUATION_REPORT.md](EVALUATION_REPORT.md).
+- The fixed live-RAG benchmark report is [LIVE_RAG_BENCHMARK_RESULTS.md](LIVE_RAG_BENCHMARK_RESULTS.md).
+- The benchmark distinguishes correct source retrieval, answer support, and optional
+  Ollama live generation. Unit RAG tests should not be treated as evidence that a live
+  Ollama model was available.
+
+Important RAG behavior:
+- Manager review timeline: **3 business days**.
+- Deterministic policy facts are extracted before calling Ollama, where possible.
+- Unsupported questions abstain instead of inventing a policy.
+- Historical versions and current dates are routed by effective date.
+- Conflicting policy versions are surfaced instead of silently selected.
+- Every answer includes source markers and page/document citations.
+
+## Narrated Demo
+
+The repository does not contain a recorded video or audio file. Before external submission,
+record a 5–10 minute narrated demonstration showing:
+
+1. Employee login and policy citation.
+2. Leave request, working days, balance, holiday, overlap, and comp-off behavior.
+3. Coverage recommendation, deadline/backup conflict, and manager review.
+4. Historical policy routing and unsupported-question abstention.
+5. Manager/HR dashboards, analytics, timeline alerts, CSV export, and audit logs.
+
+Upload the recording to an evaluator-accessible private location and add the recording
+link to this section; do not embed real credentials or real employee information.
+
+## Run Instructions
+
+Start Flask first in one terminal:
+
+```bash
+source .venv/bin/activate
+python api.py
+```
+
+Flask local URL: <http://127.0.0.1:5001>
+
+Verify it:
+
+```bash
+curl http://127.0.0.1:5001/api/health
+```
+
+Start Streamlit in a second terminal:
+
+```bash
+source .venv/bin/activate
+python -m streamlit run app.py
+```
+
+Streamlit local URL: <http://localhost:8501>
+
+Streamlit uses Flask when it is available and can fall back to direct Python services for the local demo.
+
+## Demo Data
+
+This project contains only fictional employees, teams, leave balances, attendance, policies, deadlines, comp-off records, and audit records. The seed includes two teams, sample HR/business records, historical policy versions, and three demo policy documents.
+
+Synthetic comp-off credits are also seeded for demo use:
+
+| Employee | Employee ID | Available comp-off |
+|---|---|---|
+| Rahul | `E001` | 2.0 days |
+| Ravi | `E006` | 1.5 days |
+
+`python -m database.seed` updates an existing database without duplicating
+these labeled credits. Use `python -m database.seed --force` only as a demo reset.
+
+> **DEMO ONLY:** The credentials below use synthetic accounts and passwords for local evaluation. Never reuse these passwords or expose this dataset outside a controlled demonstration environment.
+
+| Role | Employee ID | Password |
+|---|---|---|
+| HR administrator | `HR001` | `hradmin@2026` |
+| Engineering manager | `E005` | `kiranmgr@2026` |
+| Employee | `E001` | `rahuluser@2026` |
+| Product manager | `E010` | `vikrammgr@2026` |
+| Product analyst | `E006` | `raviuser@2026` |
+
+Initialize or update the synthetic dataset without dropping existing tables:
+
+```bash
+python -m database.seed
+```
+
+Reset and recreate the synthetic demo database:
+
+```bash
+python -m database.seed --force
+python verify.py
 python rag_cli.py index
 ```
 
-### 5. Local Ollama LLM Setup (Optional for Live RAG)
-Install and run local Ollama with `llama3.2`:
+The `--force` option recreates demo tables in the configured database. Do not run it against a real HR database.
 
-```bash# Start Ollama service (in a separate terminal)
-ollama serve
+## Synthetic Dataset and Database Schema
 
-# Pull the lightweight 3.2 model
-ollama pull llama3.2
-```
-*Note: If Ollama is not running, the application gracefully provides retrieved excerpts and citations.*
+The repeatable seed creates fictional employees in two teams, employee/manager/HR
+roles, annual and sick leave balances, public and optional holidays, leave
+requests, attendance, comp-off records, project deadlines, backups, audit
+records, and policy-document metadata. Policy source files are under
+`data/policies/`. No real employee data or confidential company policy is used.
 
-### 6. Launch the Flask Backend API (REST Service)
-Start the REST API server:
+The main SQLite tables are:
 
-```bash
-python api.py
-```
-The Flask backend runs on `http://localhost:5001` and provides 24 production-grade REST endpoints with PBKDF2 authentication, token-based user context verification, and role-based access control (`401 Unauthorized`, `403 Forbidden`, `400 Bad Request`):
+| Tables | Purpose |
+|---|---|
+| `teams`, `employees`, `user_credentials` | Team coverage thresholds, role/team relationships, and salted password hashes |
+| `leave_balances`, `leave_requests`, `decision_history` | Entitlements, requests and statuses, human decisions, and recommendation evidence |
+| `holidays`, `attendance`, `comp_off_records` | Calendar rules, daily attendance, and earned/used/expired comp-off |
+| `project_deadlines`, `backup_assignments`, `timeline_items` | Delivery risks, designated backups, and persistent timeline events |
+| `policy_documents` | Policy versions, effective dates, and source paths |
+| `audit_logs` | Auditable actor, action, target, and timestamp records |
 
-| Category | Endpoint | Method | Role | Description |
-|---|---|---|---|---|
-| **Auth** | `/api/auth/login` | POST | Public | Authenticates employee/manager/HR, returns session credentials |
-| **Auth** | `/api/auth/me` | GET | Authenticated | Returns current authenticated user context |
-| **Leave** | `/api/leave/request` | POST | Authenticated | Creates a new leave request with deterministic validation |
-| **Leave** | `/api/leave/balance` | GET | Authenticated | Retrieves entitled, used, pending, and remaining balances |
-| **Leave** | `/api/leave/requests` | GET | Authenticated | Lists leave requests filtered by status or employee |
-| **Leave** | `/api/leave/decide` | POST | Manager/HR | Human manager decision with review note |
-| **Leave** | `/api/leave/cancel` | POST | Authenticated | Cancels pending or active leave, restoring balances |
-| **Leave** | `/api/leave/holidays` | GET | Authenticated | Retrieves public and optional holiday calendar |
-| **Leave** | `/api/leave/decision-history/<id>` | GET | Authenticated | Retrieves full chronological audit trail of AI & human actions |
-| **Attendance** | `/api/attendance/clock-in` | POST | Authenticated | Logs daily clock-in; prevents duplicate check-ins |
-| **Attendance** | `/api/attendance/clock-out` | POST | Authenticated | Logs daily clock-out and updates duration |
-| **Attendance** | `/api/attendance/history` | GET | Authenticated | Retrieves employee attendance logs |
-| **Attendance** | `/api/attendance/missing-clock-outs` | GET | Authenticated | Discovers unclosed check-in sessions |
-| **Attendance** | `/api/attendance/regularize` | POST | Authenticated | Regularizes missing punch records with audit logging |
-| **Workforce** | `/api/workforce/evaluate` | POST | Manager/HR | Evaluates workforce coverage and recommendation for a request |
-| **Workforce** | `/api/workforce/coverage` | GET | Manager/HR | Returns team daily staffing levels and breach flags |
-| **Workforce** | `/api/workforce/backups` | GET | Manager/HR | Recommends ranked backup team candidates |
-| **Workforce** | `/api/workforce/what-if` | POST | Manager/HR | Simulates hypothetical leave scenarios with custom thresholds |
-| **Dashboards** | `/api/dashboard/employee` | GET | Authenticated | Self-scoped dashboard for personal metrics & balances |
-| **Dashboards** | `/api/dashboard/manager` | GET | Manager/HR | Team-scoped dashboard for staffing, pending SLA, & alerts |
-| **Dashboards** | `/api/dashboard/hr` | GET | HR Admin | Org-wide dashboard for metrics, compliance, & directories |
-| **Timeline** | `/api/timeline/alerts` | GET | Authenticated | Surfaces overdue items, approval deadlines, & low coverage |
-| **Timeline** | `/api/timeline/events` | GET | Authenticated | Retrieves chronological timeline items |
-| **Timeline** | `/api/timeline/query-overlap` | POST | Authenticated | Evaluates proposed leave window against deliverables & milestones |
-| **Comp-off** | `/api/compoff/summary` | GET | Authenticated | Returns earned, used, available, pending, & expiring credits |
-| **Analytics** | `/api/analytics/metrics` | GET | Authenticated | Multi-dimensional metrics (team, employee, month, type, status) |
-| **Analytics** | `/api/analytics/team-coverage` | GET | Manager/HR | Longitudinal daily coverage % and breach diagnostics |
-| **Analytics** | `/api/analytics/organization` | GET | HR Admin | Company-wide workforce breakdown and headcount summary |
-| **Analytics** | `/api/analytics/export-csv` | GET | Authenticated | Exports workforce analytics data as CSV |
-| **RAG** | `/api/rag/ask` | POST | Authenticated | Grounded policy Q&A with multi-page citations & abstention |
-| **RAG** | `/api/rag/reindex` | POST | HR Admin | Rebuilds ChromaDB vector index from registered policy files |
-| **Admin** | `/api/admin/employees` | GET | HR Admin | Lists all active and inactive employees |
-| **Admin** | `/api/admin/create-employee` | POST | HR Admin | Provisions new employee profile with credentials |
-| **Admin** | `/api/admin/deactivate-employee` | POST | HR Admin | Deactivates employee profile |
-| **Admin** | `/api/admin/audit-logs` | GET | HR Admin | Retrieves immutable system audit trail |
+`database/schema.sql` defines the relational schema, constraints, and indexes.
+The SQLite database and Chroma index are generated locally and excluded from
+the repository; run the seed and index commands above to recreate them.
 
-#### Quick API Testing with cURL
+## RAG, Rules, and Metric Definitions
 
-```bash
-# 1. Authenticate as Rahul Sharma (Senior AI Engineer)
-curl -X POST http://localhost:5001/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"employee_id": "E001", "password": "rahuluser@2026"}'
+Markdown and PDF policies are loaded with their version and effective-date
+metadata. `rag/chunks.py` splits text at headings and paragraphs into chunks of
+up to 950 characters. Sentence Transformers creates normalized embeddings;
+ChromaDB uses cosine distance and searches only policies applicable on the
+requested date. The assistant considers the four closest results, rejects
+weak matches above a 0.70 distance, and cites the matching document, version,
+section, page, and file. Ollama may phrase supported evidence; it does not
+calculate balances or make HR decisions. Conflicting versions are surfaced,
+and insufficient evidence produces an abstention.
 
-# 2. Check personal leave balances
-curl -X GET "http://localhost:5001/api/leave/balance?employee_id=E001" \
-  -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01"
+Operational rules are deterministic and covered by pytest:
 
-# 3. Clock-in for the day
-curl -X POST http://localhost:5001/api/attendance/clock-in \
-  -H "Content-Type: application/json" \
-  -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01" \
-  -d '{"notes": "WFH Remote Session"}'
+- **Working days:** Monday-Friday dates, excluding public holidays. Optional
+  holidays are excluded only when the employee elects to use one.
+- **Annual/sick balance:** remaining days = entitlement minus used days;
+  available days further subtract pending and review-required requests.
+- **Attendance percentage:** present days / (present days + absent days) * 100.
+  Approved leave is excluded from the denominator.
+- **Team coverage:** available active team members / total active team members
+  * 100. Approved, pending, or review-required leave counts as an absence on a
+  working day. Weekends and public holidays are non-working days.
+- **Comp-off:** only available, unexpired credits can be used; used and expired
+  credits do not contribute to available balance.
 
-# 4. Ask RAG Policy Assistant
-curl -X POST http://localhost:5001/api/rag/ask \
-  -H "Content-Type: application/json" \
-  -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01" \
-  -d '{"question": "How many days of annual leave do I get?", "as_of_date": "2026-03-01"}'
+Human managers or HR make final leave decisions. Coverage and backup results
+are recommendations for review, not automatic approvals.
 
-# 5. Verify RBAC Security (Employee blocked from HR Audit Logs -> 403 Forbidden)
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5001/api/admin/audit-logs \
-  -H "X-Employee-ID: E001" -H "X-Employee-Role: employee" -H "X-Employee-Team: T01"
-# Output: 403
-```
+## Testing
 
-### 7. Launch the Streamlit Frontend Application (Dual-Mode Execution)
-Start the interactive UI:
+Run the complete pytest suite from the project root:
 
 ```bash
-python -m streamlit run app.py
+python -m pytest -q
 ```
-Open your browser at `http://localhost:8501`.
 
-**Dual-Mode Operation**:
-- When the Flask backend is running on `http://localhost:5001`, Streamlit routes API actions (leave requests, clock-in/out, manager decisions, cancellations, analytics) through the Flask REST API. The UI sidebar displays a green **⚡ Connected to Flask API: http://localhost:5001** badge.
-- If the Flask backend is offline or stopped, the frontend seamlessly switches to direct service execution via local fallback, ensuring high availability.
-
----
-
-## 🧪 Comprehensive Test Suite Execution
-
-Execute the full suite of **159 automated unit, integration, and scenario tests** (100% passing across all 16 test modules):
+Focused suites are also available:
 
 ```bash
-# Run the complete test suite
-python -m pytest -v
-
-# Run specific test modules
-python -m pytest -v tests/test_rag_10_benchmark_questions.py # 10 Grounded Policy Scenarios & Edge Cases
-python -m pytest -v tests/test_api_flask.py                 # 24 Flask REST Endpoints & RBAC Security
-python -m pytest -v tests/test_end_to_end_scenarios.py       # 10 End-to-End Workflow Scenarios
-python -m pytest -v tests/test_phase5_complete.py            # Analytics & Dashboards Suite
-python -m pytest -v tests/test_phase4_complete.py            # Attendance, Comp-off & Workforce Planning
-python -m pytest -v tests/test_phase3_complete.py            # Leave Management & Decision Support
-python -m pytest -v tests/test_rag_phase2.py                 # ChromaDB, Citations & Prompt Injection
-python -m pytest -v tests/test_attendance.py                 # Clock-in/out & Missing Punches
-python -m pytest -v tests/test_audit_and_admin.py            # RBAC Isolation & Immutable Audit Logs
+python -m pytest -v tests/test_phase1_access_control.py
+python -m pytest -v tests/test_phase3_complete.py
+python -m pytest -v tests/test_phase4_complete.py
+python -m pytest -v tests/test_phase5_complete.py
+python -m pytest -v tests/test_api_flask.py
+python -m pytest -v tests/test_rag_10_benchmark_questions.py
+python -m pytest -v tests/test_end_to_end_scenarios.py
 ```
 
-### 📋 The 10 Benchmark Policy RAG Suite (`data/rag_benchmark_questions.json`)
-The assessment includes a structured benchmark suite testing complex real-world HR policy inquiries:
-1. **Annual Leave Entitlement**: Verified against Sample Leave Policy v2.0 (Page 1) -> 18 days.
-2. **Advance Notice Requirement**: Verified against Sample Leave Policy v2.0 (Page 1) -> 5 calendar days.
-3. **Sick Leave & Medical Certificate**: Multi-page citation verified on Page 2 -> $\ge 3$ consecutive days requires doctor's note.
-4. **Comp-off Earning & Validity**: 60-day expiry rule grounded with exact section citations.
-5. **Effective Date Routing (2025 vs 2026)**: Historical query (As-of `2025-10-01`) routes to Policy v1.0 (15 days), while modern query (`2026-03-01`) routes to Policy v2.0 (18 days).
-6. **Probation Leave Eligibility**: Verified against Page 2 -> Sick leave only during first 3 months.
-7. **Leave Cancellation Policy**: Grounded explanation of approval restoration rules.
-8. **Prompt Injection Defense**: Evaluates resistance against malicious adversarial text attempting to grant infinite leave.
-9. **Conflicting Policy Version Transparency**: Surfaces warning banners when overlapping or divergent rules exist across active policies.
-10. **Out-of-Scope Safe Abstention**: Safely abstains on unmentioned rules (e.g., pet insurance, space travel) without hallucinating citations.
+The test suite covers database access, role boundaries, leave, attendance,
+workforce planning, dashboards, Flask API routes, RAG behavior, and end-to-end scenarios.
 
----
+## Privacy and Limitations
 
-## 🌟 Bonus Features Implemented (PDF Section 11)
+- All employees, credentials, leave records, policies, attendance data, deadlines, and audit information are synthetic.
+- The policy documents are demo samples, not legal or employment advice, and may not reflect any jurisdiction's real requirements.
+- This is a single-host demonstration, not a production HR system.
+- SQLite, process-local login tokens, and local service fallback are suitable for local testing but require production database, session, backup, and scaling designs.
+- No HTTPS, secrets manager, distributed access control, brute-force protection, monitoring, or disaster recovery is configured.
+- Real employee data would require suitable privacy, retention, minimization, access review, encryption, and breach procedures.
+- Policy answers depend on the quality and scope of the indexed documents; the assistant may abstain when evidence is insufficient.
+- Managers and HR retain final authority for leave and HR decisions.
 
-In addition to the core functional requirements, the project includes the following advanced bonus capabilities:
+## Repository Contents
 
-1. **What-If Analysis & Coverage Simulation**: Interactive simulation in `Manager Review` allowing managers to test hypothetical leave scenarios for multiple team members across arbitrary date windows.
-2. **Explainable Coverage Score with Configurable Thresholds**: Dynamic threshold slider (10%–100%) providing instant feasibility scores, breach alerts, and deadline collision warnings.
-3. **Multi-Model LLM Runtime**: Support for both `llama3.2` and `deepseek-r1` with an interactive switcher in the Streamlit UI and custom Ollama tag input.
-4. **Policy Version Comparison with Effective-Date Handling**: Side-by-side comparison between 2025 v1.0 and 2026 v2.0 policy documents with date-bound query routing.
-5. **System Audit Trail**: Real-time logging of manager decisions, leave approvals/declines, and policy changes stored in SQLite with actor and timestamp indexes.
-6. **Data Export Suite**: One-click CSV exports for employee attendance history and organization-wide workforce metrics.
-
----
-
-## 📚 Key Documentation References
-
-- [INTERVIEW_ANSWERS.md](file:///Users/kummarisurendrakumar/Downloads/ai_hr/INTERVIEW_ANSWERS.md): Complete technical answers, architecture diagrams, and mathematical models for all 10 interview questions from Section 13 (Page 10) of the assignment PDF.
-- [EVALUATION_REPORT.md](file:///Users/kummarisurendrakumar/Downloads/ai_hr/EVALUATION_REPORT.md): Comprehensive evaluation report with gap analysis, 10 assessment scenario verification matrix, and test logs.
-- [DEMO_SCRIPT.md](file:///Users/kummarisurendrakumar/Downloads/ai_hr/DEMO_SCRIPT.md): Step-by-step 8–10 minute narrated walkthrough script for the examiner video demo.
-
----
-
-## ⚖️ Boundaries & Ethical Considerations
-
-- **Synthetic Data**: All employee records, names, emails, and attendance logs are entirely synthetic and fictional.
-- **Attendance Context**: Missing attendance records are not automatically classified as misconduct or disciplinary absence.
-- **Decision Authority**: AI recommendations are strictly advisory; managers and HR retain sole authority over final decisions.
-- **Notifications**: In accordance with local assignment guidelines, alerts are rendered in-app; no external SMS/SMTP dependencies are claimed.
+```text
+ai_hr/
+├── app.py                 # Streamlit user interface
+├── api.py                 # Flask REST API
+├── api_client.py          # API client and direct-service fallback
+├── config.py              # Shared application settings
+├── rag_cli.py             # Policy indexing and command-line questions
+├── verify.py              # Database verification summary
+├── requirements.txt       # Python dependencies
+├── README.md              # Project overview and operating instructions
+├── access_control/        # Authentication, RBAC, sessions, and audit scope
+├── attendance/            # Clock-in/out and attendance regularization
+├── dashboards/            # Employee, manager, and HR views
+├── analytics/             # Workforce and dashboard metrics
+├── database/              # SQLite initialization and synthetic seeding
+├── leave_management/      # Leave calculations, balances, requests, and decisions
+├── workforce_planning/    # Coverage, backups, capacity, and deadlines
+├── timeline/              # Timeline events and operational alerts
+├── rag/                   # Policy ingestion, embeddings, retrieval, and grounding
+├── data/
+│   ├── hr_assistant.db    # Runtime SQLite database
+│   ├── policies/          # Synthetic Markdown and PDF policies
+│   ├── rag_benchmark_questions.json
+│   └── chroma/            # Generated ChromaDB vector index
+└── tests/                 # pytest unit, API, security, integration, and benchmark suites
+```

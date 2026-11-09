@@ -118,6 +118,17 @@
     "expected_section": null,
     "expected_keywords": ["cannot find", "not available", "unsupported", "abstain", "does not contain"],
     "should_abstain": true
+  },
+  {
+    "id": "Q11",
+    "category": "Internal Leave Request Process",
+    "question": "What escalation steps are required when leave processing shows low team coverage?",
+    "as_of": "2026-10-31",
+    "expected_document": "Synthetic Leave Request Process",
+    "expected_version": "1.0",
+    "expected_page": 1,
+    "expected_section": "4. Escalation Procedure",
+    "expected_keywords": ["HR", "coverage", "escalate"],
+    "should_abstain": false
   }
 ]
-

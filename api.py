@@ -1,7 +1,8 @@
 """Flask REST API backend for the AI-Powered Leave, Attendance & Workforce Planning Assistant."""
 from __future__ import annotations
 import os
-from datetime import date
+import secrets
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from flask import Flask, request, jsonify
@@ -24,7 +25,7 @@ from attendance.service import (
 )
 from workforce_planning.service import (
     evaluate_leave_request, team_coverage, recommend_backups,
-    team_capacity_forecast, simulate_what_if_leave, list_team_deadlines
+    team_capacity_forecast, list_team_deadlines
 )
 from dashboards.service import employee_dashboard, manager_dashboard, hr_dashboard, get_decision_history
 from timeline.service import (
@@ -39,39 +40,82 @@ from rag.assistant import ask
 from rag.policies import load_policies
 from rag.chunks import split_policy
 from rag.store import rebuild
-from database.db import initialize, DB_PATH
+from database.db import initialize, DB_PATH, connection
+from config import FLASK_HOST, FLASK_PORT, OLLAMA_MODEL
 
 app = Flask(__name__)
+app.config["ALLOW_TEST_HEADERS"] = False
 initialize()
-try:
-    initialize_security()
-except Exception:
-    pass
+initialize_security()
+
+SESSION_LIFETIME = timedelta(hours=8)
+_API_SESSIONS: Dict[str, tuple] = {}
+
+
+@app.errorhandler(AccessError)
+def handle_access_error(error):
+    return jsonify({"error": str(error)}), 401
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(error):
+    app.logger.exception("Unhandled API exception")
+    return jsonify({"error": "Internal server error"}), 500
+
+
+def _load_actor_from_database(employee_id: str) -> UserContext:
+    from database.db import connection
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT employee_id,name,role,team_id,is_active FROM employees WHERE employee_id=?",
+            (employee_id,),
+        ).fetchone()
+    if row is None or not row["is_active"]:
+        raise AccessError("Authenticated account is inactive or unknown.")
+    return UserContext(
+        employee_id=row["employee_id"],
+        name=row["name"],
+        role=row["role"],
+        team_id=row["team_id"],
+    )
 
 
 def _resolve_actor(data: Optional[dict] = None) -> UserContext:
     """Extract authenticated actor context from request headers, query params, or body."""
-    data = data or {}
-    actor_id = (
-        request.headers.get("X-Actor-ID") or
-        request.args.get("actor_id") or
-        data.get("actor_id") or
-        data.get("employee_id") or
-        "E001"
-    )
-    role = (
-        request.headers.get("X-Actor-Role") or
-        request.args.get("actor_role") or
-        data.get("actor_role") or
-        "employee"
-    )
-    team_id = (
-        request.headers.get("X-Actor-Team") or
-        request.args.get("actor_team") or
-        data.get("actor_team") or
-        "T01"
-    )
-    return UserContext(employee_id=actor_id.strip(), name=actor_id.strip(), role=role.strip(), team_id=team_id.strip() if team_id else None)
+    authorization = request.headers.get("Authorization", "")
+    if authorization.startswith("Bearer "):
+        token = authorization[7:].strip()
+        session = _API_SESSIONS.get(token)
+        if session is None:
+            raise AccessError("Invalid or expired access token.")
+        actor, expires_at = session
+        if datetime.now(timezone.utc) >= expires_at:
+            _API_SESSIONS.pop(token, None)
+            raise AccessError("Invalid or expired access token.")
+        return actor
+
+    # Development/test compatibility only. Never enabled by the API entrypoint.
+    if app.config.get("ALLOW_TEST_HEADERS", False) or app.config.get("TESTING", False):
+        actor_id = (
+            request.headers.get("X-Actor-ID")
+            or request.args.get("actor_id")
+            or request.args.get("employee_id")
+            or (data or {}).get("employee_id")
+        )
+        if actor_id:
+            try:
+                return _load_actor_from_database(actor_id.strip())
+            except AccessError:
+                # Legacy test clients may use synthetic IDs not present in the database.
+                # This path is disabled outside Flask TESTING mode.
+                return UserContext(
+                    employee_id=actor_id.strip(),
+                    name=actor_id.strip(),
+                    role=request.headers.get("X-Actor-Role", "employee").strip(),
+                    team_id=request.headers.get("X-Actor-Team") or None,
+                )
+
+    raise AccessError("Authentication required. Provide a Bearer access token.")
 
 
 # ==============================================================================
@@ -79,11 +123,19 @@ def _resolve_actor(data: Optional[dict] = None) -> UserContext:
 # ==============================================================================
 @app.route("/api/health", methods=["GET"])
 def health():
+    try:
+        with connection() as conn:
+            conn.execute("SELECT 1 FROM employees LIMIT 1").fetchone()
+        status = "healthy"
+        status_code = 200
+    except Exception as exc:
+        status = "degraded"
+        status_code = 503
     return jsonify({
-        "status": "healthy",
+        "status": status,
         "service": "AI HR Assistant Flask Backend",
-        "database": str(DB_PATH)
-    }), 200
+        "database_initialized": status == "healthy",
+    }), status_code
 
 
 # ==============================================================================
@@ -98,11 +150,14 @@ def login():
         return jsonify({"error": "employee_id and password are required"}), 400
     try:
         user = authenticate(employee_id.strip(), password)
+        token = secrets.token_urlsafe(32)
+        _API_SESSIONS[token] = (user, datetime.now(timezone.utc) + SESSION_LIFETIME)
         return jsonify({
             "employee_id": user.employee_id,
             "name": user.name,
             "role": user.role,
-            "team_id": user.team_id
+            "team_id": user.team_id,
+            "access_token": token
         }), 200
     except AccessError as e:
         return jsonify({"error": str(e)}), 401
@@ -112,13 +167,24 @@ def login():
 
 @app.route("/api/auth/me", methods=["GET"])
 def get_current_user():
-    actor = _resolve_actor()
+    try:
+        actor = _resolve_actor()
+    except AccessError as e:
+        return jsonify({"error": str(e)}), 401
     return jsonify({
         "employee_id": actor.employee_id,
         "name": actor.name,
         "role": actor.role,
         "team_id": actor.team_id
     }), 200
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def logout():
+    authorization = request.headers.get("Authorization", "")
+    if authorization.startswith("Bearer "):
+        _API_SESSIONS.pop(authorization[7:].strip(), None)
+    return jsonify({"status": "logged_out"}), 200
 
 
 
@@ -128,6 +194,10 @@ def get_current_user():
 @app.route("/api/leave/request", methods=["POST"])
 def submit_leave():
     data = request.get_json(force=True, silent=True) or {}
+    try:
+        actor = _resolve_actor(data)
+    except AccessError as e:
+        return jsonify({"error": str(e)}), 401
     employee_id = data.get("employee_id")
     leave_type = data.get("leave_type")
     start_date = data.get("start_date")
@@ -138,6 +208,10 @@ def submit_leave():
 
     if not all([employee_id, leave_type, start_date, end_date]):
         return jsonify({"error": "Missing required fields: employee_id, leave_type, start_date, end_date"}), 400
+    if actor.role == "employee" and employee_id != actor.employee_id:
+        return jsonify({"error": "Employees may submit leave only for their own account."}), 403
+    if actor.role != "employee":
+        return jsonify({"error": "Only employee accounts may submit leave requests."}), 403
 
     try:
         req_id = create_leave_request(
@@ -161,12 +235,24 @@ def submit_leave():
 
 @app.route("/api/leave/balance", methods=["GET"])
 def check_balance():
+    try:
+        actor = _resolve_actor()
+    except AccessError as e:
+        return jsonify({"error": str(e)}), 401
     employee_id = request.args.get("employee_id")
     leave_type = request.args.get("leave_type", "annual")
     year = int(request.args.get("year", date.today().year))
 
     if not employee_id:
         return jsonify({"error": "employee_id query parameter is required"}), 400
+    if actor.role == "employee" and employee_id != actor.employee_id:
+        return jsonify({"error": "Employees may inspect only their own leave balance."}), 403
+    if actor.role == "manager":
+        from access_control.service import require_employee_scope
+        try:
+            require_employee_scope(actor, employee_id)
+        except AccessError as e:
+            return jsonify({"error": str(e)}), 403
 
     try:
         bal = get_balance(employee_id, leave_type, year)
@@ -424,29 +510,6 @@ def get_backup_recommendations():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/workforce/what-if", methods=["POST"])
-def run_what_if_analysis():
-    data = request.get_json(force=True, silent=True) or {}
-    team_id = data.get("team_id", "T01")
-    start_date = data.get("start_date")
-    end_date = data.get("end_date")
-    absent_emp_ids = data.get("absent_employee_ids", [])
-    threshold = data.get("threshold_percent")
-
-    if not start_date or not end_date or not absent_emp_ids:
-        return jsonify({"error": "start_date, end_date, and absent_employee_ids are required"}), 400
-
-    try:
-        res = simulate_what_if_leave(
-            team_id=team_id,
-            candidate_employee_ids=absent_emp_ids,
-            start_date=start_date,
-            end_date=end_date,
-            threshold_percent=int(threshold) if threshold else None
-        )
-        return jsonify(res), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 
 # ==============================================================================
@@ -466,6 +529,9 @@ def get_employee_dashboard():
 def get_manager_dashboard():
     actor = _resolve_actor()
     try:
+        requested_team = request.args.get("team_id")
+        if actor.role == "manager" and requested_team and requested_team != actor.team_id:
+            raise AccessError("Managers cannot access another team's dashboard.")
         data = manager_dashboard(actor)
         return jsonify(data), 200
     except AccessError as e:
@@ -625,7 +691,7 @@ def handle_rag_ask():
     data = request.get_json(force=True, silent=True) or {}
     question = data.get("question")
     as_of = data.get("as_of")
-    llm_model = data.get("llm_model", "llama3.2")
+    llm_model = data.get("llm_model", OLLAMA_MODEL)
 
     if not question or not question.strip():
         return jsonify({"error": "question field is required and must not be empty"}), 400
@@ -737,5 +803,4 @@ def query_audit_logs():
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("FLASK_PORT", 5001))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host=FLASK_HOST, port=FLASK_PORT, debug=False)

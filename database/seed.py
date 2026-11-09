@@ -32,6 +32,33 @@ def _seed_credentials(conn):
                              (emp_id, salt, digest))
 
 
+def _ensure_demo_comp_off(conn):
+    """Ensure Rahul and Ravi have visible synthetic available comp-off credits."""
+    credits = [
+        ('E001', '2026-11-01', '2027-01-30', 2.0, 'Synthetic demo: Rahul weekend work'),
+        ('E006', '2026-11-02', '2027-01-31', 1.5, 'Synthetic demo: Ravi project coverage'),
+    ]
+    for employee_id, earned_on, expires_on, days, work_reference in credits:
+        employee = conn.execute(
+            "SELECT 1 FROM employees WHERE employee_id=? AND is_active=1",
+            (employee_id,),
+        ).fetchone()
+        if not employee:
+            continue
+        existing = conn.execute(
+            """SELECT 1 FROM comp_off_records
+               WHERE employee_id=? AND work_reference=?""",
+            (employee_id, work_reference),
+        ).fetchone()
+        if not existing:
+            conn.execute(
+                """INSERT INTO comp_off_records
+                   (employee_id, earned_on, expires_on, days, status, work_reference)
+                   VALUES (?, ?, ?, ?, 'available', ?)""",
+                (employee_id, earned_on, expires_on, days, work_reference),
+            )
+
+
 def seed(db_path: Path = DB_PATH, force: bool = False):
     initialize(db_path)
     with connection(db_path) as conn:
@@ -43,6 +70,7 @@ def seed(db_path: Path = DB_PATH, force: bool = False):
                     (employee_id, name, email, role, team_id, manager_id, joined_on, is_active)
                     VALUES ('HR001', 'HR Admin', 'hr-admin@example.test', 'hr', 'T01', NULL, '2025-07-01', 1)""")
             _seed_credentials(conn)
+            _ensure_demo_comp_off(conn)
             print('Seed skipped: employees already exist. Ensured HR001 and demo credentials.')
             return
 
@@ -83,6 +111,7 @@ def seed(db_path: Path = DB_PATH, force: bool = False):
             ('Sample Leave Policy', '1.0', '2025-01-01', '2025-12-31', 'data/policies/leave_policy_v1.md', 0),
             ('Sample Leave Policy', '2.0', '2026-01-01', None, 'data/policies/leave_policy_v2.md', 1),
             ('Attendance and Remote Work Policy', '1.0', '2026-01-01', None, 'data/policies/attendance_remote_policy.pdf', 1),
+            ('Synthetic Leave Request Process', '1.0', '2026-01-01', None, 'data/policies/leave_request_process.md', 1),
         ])
         conn.executemany('''INSERT OR IGNORE INTO leave_requests
             (employee_id, leave_type, start_date, end_date, requested_days, reason, status, submitted_on, approval_due_on)
@@ -99,6 +128,7 @@ def seed(db_path: Path = DB_PATH, force: bool = False):
             ('E006', '2026-07-17', '2026-10-15', 'expired', None),
             ('E009', '2026-09-21', '2026-12-20', 'used', '2026-10-05'),
         ])
+        _ensure_demo_comp_off(conn)
         conn.executemany('''INSERT OR IGNORE INTO project_deadlines(team_id, title, due_on, critical, owner_id)
             VALUES (?, ?, ?, ?, ?)''', [
             ('T01', 'Model evaluation delivery', '2026-11-11', 1, 'E001'),
@@ -124,5 +154,16 @@ def seed(db_path: Path = DB_PATH, force: bool = False):
 
 
 if __name__ == '__main__':
-    seed()
-
+    import argparse
+    parser = argparse.ArgumentParser(description='Seed synthetic HR demo data.')
+    parser.add_argument('--force', action='store_true', help='Recreate the synthetic demo dataset.')
+    args = parser.parse_args()
+    if args.force:
+        with connection(DB_PATH) as conn:
+            conn.execute('PRAGMA foreign_keys=OFF')
+            for table in ('attendance', 'leave_requests', 'leave_balances', 'employee_certificates',
+                          'employees', 'teams', 'policy_documents', 'comp_off_records',
+                          'project_deadlines', 'backup_assignments', 'timeline_items',
+                          'decision_history', 'audit_logs', 'user_credentials'):
+                conn.execute(f'DROP TABLE IF EXISTS {table}')
+    seed(force=args.force)

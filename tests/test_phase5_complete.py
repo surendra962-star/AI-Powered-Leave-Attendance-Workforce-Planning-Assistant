@@ -445,6 +445,7 @@ def test_manager_record_decision_with_note_and_history_preserved(test_db):
 def test_flask_api_phase5_endpoints(test_db):
     """Verify Phase 5 REST endpoints in api.py: decision history, metrics filters, and team coverage."""
     from api import app
+    app.config["ALLOW_TEST_HEADERS"] = True
     client = app.test_client()
 
     with connection(test_db) as conn:
@@ -481,4 +482,3 @@ def test_flask_api_phase5_endpoints(test_db):
     c_data = res_cov.get_json()
     assert c_data['team_id'] == 'T01'
     assert "average_coverage_percent" in c_data
-

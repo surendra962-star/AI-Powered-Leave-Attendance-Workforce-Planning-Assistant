@@ -8,7 +8,7 @@ from access_control.service import (
     authenticate, AccessError, initialize_security, set_employee_password,
     create_employee, deactivate_employee, list_all_employees, get_audit_logs, UserContext
 )
-from database.db import initialize, connection, DB_PATH
+from database.db import initialize, connection, DB_PATH, log_audit
 from database.seed import seed
 from leave_management.service import (
     create_leave_request, decide_leave_request, cancel_leave_request,
@@ -18,8 +18,7 @@ from leave_management.service import (
 )
 from dashboards.service import employee_dashboard, manager_dashboard, hr_dashboard, get_decision_history
 from workforce_planning.service import (
-    evaluate_leave_request, team_coverage, recommend_backups, team_capacity_forecast,
-    simulate_what_if_leave
+    evaluate_leave_request, team_coverage, recommend_backups, team_capacity_forecast
 )
 from timeline.service import (
     get_alerts, list_timeline, add_timeline_item, comp_off_summary, record_comp_off,
@@ -32,6 +31,7 @@ from attendance.service import (
 )
 from analytics.service import workforce_metrics, organization_workforce_summary, export_metrics_csv, get_team_coverage_analytics
 from api_client import FlaskAPIClient
+from config import OLLAMA_MODEL
 
 st.set_page_config(
     page_title="AI HR Assistant",
@@ -44,8 +44,13 @@ st.set_page_config(
 try:
     initialize()
     initialize_security()
-except Exception:
-    pass
+except Exception as exc:
+    st.error(
+        "Database initialization failed. Stop Streamlit, verify the SQLite path and permissions, "
+        "then run `python -m database.seed --force` from the project root."
+    )
+    st.caption(f"Technical detail: {type(exc).__name__}: {exc}")
+    st.stop()
 
 st.markdown("""
 <style>
@@ -84,6 +89,10 @@ if "actor" not in st.session_state:
             else:
                 try:
                     st.session_state.actor = authenticate(uid.strip(), pwd)
+                    api_probe = FlaskAPIClient()
+                    if api_probe.is_healthy():
+                        api_session = api_probe.login(uid.strip(), pwd)
+                        st.session_state.api_access_token = api_session["access_token"]
                     st.success(f"Welcome back, {st.session_state.actor.name}!")
                     st.rerun()
                 except Exception as e:
@@ -800,32 +809,25 @@ elif page == "HR Policy Assistant (RAG)":
         except Exception:
             pass
 
-        available_choices = ["llama3.2", "deepseek-r1", "llama3.1", "custom"]
-        model_choice = st.selectbox("LLM Model (Ollama)", available_choices)
-        if model_choice == "custom":
-            active_llm = st.text_input("Custom Ollama Model Name", value="llama3.2")
-        else:
-            active_llm = model_choice
-
-        as_of_dt = st.date_input("Policy As-Of Date", date.today())
+        active_llm = OLLAMA_MODEL
         
         if ollama_online:
             st.success(f"🟢 Ollama Service: Online (`{active_llm}`)")
         else:
             st.warning("⚠️ Ollama Service: Offline (Run `ollama serve` or open Ollama app)")
 
-    with st.expander("📑 Policy Version Registry & Effective Dates (v1.0 vs v2.0 Comparison)"):
+    with st.expander("📑 Policy Version Registry"):
         with connection() as conn:
             pol_rows = [dict(r) for r in conn.execute(
                 "SELECT policy_id, title, version, effective_from, effective_to, is_active FROM policy_documents ORDER BY effective_from"
             )]
         if pol_rows:
             st.dataframe(pd.DataFrame(pol_rows), use_container_width=True, hide_index=True)
-            st.info("💡 **Effective Date Logic**: v1.0 covers 2025 (15 days annual leave, 8 days sick leave). v2.0 covers 2026 onwards (18 days annual leave, 10 days sick leave, 90-day comp-off expiry). Queries are resolved against the policy active on the specified As-Of date.")
-
     with st.expander("🛠️ Policy Vector Index Management (ChromaDB)"):
         st.write("If policy files were added or modified, rebuild the vector index below.")
-        if st.button("🔄 Rebuild Policy Vector Index"):
+        if actor.role != "hr":
+            st.info("Only HR administrators can rebuild the policy index.")
+        elif st.button("🔄 Rebuild Policy Vector Index"):
             with st.spinner("Rebuilding policy chunks and ChromaDB vector embeddings..."):
                 try:
                     from rag.policies import load_policies
@@ -834,6 +836,13 @@ elif page == "HR Policy Assistant (RAG)":
                     pols = load_policies()
                     all_chunks = [c for p in pols for c in split_policy(p)]
                     indexed_count = rebuild(all_chunks, DB_PATH.parent / 'chroma')
+                    log_audit(
+                        actor.employee_id,
+                        actor.role,
+                        "policy_index_rebuild",
+                        "policy_documents",
+                        f"Reindexed {len(pols)} policy document(s) into {indexed_count} chunks",
+                    )
                     st.success(f"✅ Successfully indexed {indexed_count} policy chunks across {len(pols)} policy documents into ChromaDB!")
                 except Exception as reb_err:
                     st.error(f"Failed to rebuild index: {reb_err}")
@@ -845,7 +854,7 @@ elif page == "HR Policy Assistant (RAG)":
             with st.spinner(f"Retrieving policy evidence and prompting local LLM ({active_llm})..."):
                 try:
                     from rag.assistant import ask
-                    ans = ask(custom_q.strip(), on=as_of_dt, llm_model=active_llm)
+                    ans = ask(custom_q.strip(), on=date.today(), llm_model=active_llm)
 
                     st.markdown(f"### Answer (Model: `{ans.get('llm_model', active_llm)}`)")
                     st.write(ans["answer"])
@@ -1082,87 +1091,16 @@ elif page == "Manager Review & Coverage":
     else:
         st.info("No project deadlines on record for this team.")
 
-    st.markdown("---")
-    st.subheader("🔮 What-If Analysis: Compare Team Coverage for Alternative Dates (Bonus)")
-    st.caption("Simulate hypothetical absences for one or more team members across candidate date ranges to evaluate coverage impact, threshold breaches, and deadline conflicts.")
-
-    with connection() as conn:
-        team_members = [dict(r) for r in conn.execute(
-            "SELECT employee_id, name, role FROM employees WHERE team_id=? AND is_active=1 ORDER BY employee_id",
-            (m_dash["team"]["team_id"],)
-        )]
-
-    wi_col1, wi_col2 = st.columns([1, 1])
-    with wi_col1:
-        selected_candidates = st.multiselect(
-            "Select Team Members to Simulate Absence",
-            options=[e["employee_id"] for e in team_members],
-            format_func=lambda eid: next((f"{e['employee_id']} - {e['name']}" for e in team_members if e["employee_id"] == eid), eid),
-            default=[team_members[0]["employee_id"]] if team_members else []
-        )
-        wi_thresh = st.slider(
-            "Configurable Minimum Coverage Threshold (%)",
-            min_value=10, max_value=100,
-            value=int(m_dash["team"]["minimum_coverage_percent"]),
-            step=5
-        )
-
-    with wi_col2:
-        wi_start = st.date_input("Hypothetical Leave Start", date.today() + timedelta(days=2), key="wi_start")
-        wi_end = st.date_input("Hypothetical Leave End", date.today() + timedelta(days=6), key="wi_end")
-
-    if st.button("🚀 Run What-If Simulation", use_container_width=True):
-        if not selected_candidates:
-            st.warning("Please select at least one employee to simulate absence.")
-        elif wi_end < wi_start:
-            st.error("End date cannot be earlier than start date.")
-        else:
-            try:
-                sim_res = simulate_what_if_leave(
-                    team_id=m_dash["team"]["team_id"],
-                    candidate_employee_ids=selected_candidates,
-                    start_date=wi_start,
-                    end_date=wi_end,
-                    threshold_percent=wi_thresh
-                )
-
-                st.markdown("#### Simulation Findings")
-                if sim_res["is_feasible"]:
-                    st.success(f"✅ **Simulation Passed**: Proposed leave is feasible! Coverage remains at or above {wi_thresh}% on all working days, and no critical deadlines are left unassigned.")
-                else:
-                    st.error(f"⚠️ **Simulation Flagged Risks**: Lowest coverage drops to {sim_res['lowest_simulated_coverage_percent']}% ({sim_res['breach_days_count']} breach days). Critical deadlines at risk: {len(sim_res['at_risk_deadlines'])}.")
-
-                sm1, sm2, sm3, sm4 = st.columns(4)
-                sm1.metric("Lowest Simulated Coverage", f"{sim_res['lowest_simulated_coverage_percent']}%")
-                sm2.metric("Breach Working Days", sim_res["breach_days_count"])
-                sm3.metric("Evaluated Days", sim_res["total_evaluated_days"])
-                sm4.metric("Deadlines at Risk", len(sim_res["at_risk_deadlines"]))
-
-                if sim_res["recommendations"]:
-                    st.markdown("**Actionable Suggestions:**")
-                    for rec in sim_res["recommendations"]:
-                        st.markdown(f"- {rec}")
-
-                if sim_res["at_risk_deadlines"]:
-                    st.markdown("##### 🚨 Critical Deadlines Impacted")
-                    st.dataframe(pd.DataFrame(sim_res["at_risk_deadlines"]), use_container_width=True, hide_index=True)
-
-                st.markdown("##### 📅 Daily Day-by-Day Coverage Comparison")
-                df_daily = pd.DataFrame(sim_res["daily_breakdown"])[[
-                    "date", "weekday", "is_working_day", "baseline_available", "simulated_available",
-                    "total_headcount", "baseline_coverage_percent", "simulated_coverage_percent", "meets_threshold"
-                ]]
-                st.dataframe(df_daily, use_container_width=True, hide_index=True)
-            except Exception as e:
-                st.error(f"What-If Simulation error: {e}")
-
 # ==============================================================================
 # 9. HR EMPLOYEE ADMIN
 # ==============================================================================
 elif page == "HR Employee Admin":
     st.header("👥 HR Employee Administration")
 
-    admin_tab1, admin_tab2 = st.tabs(["Create New Employee", "Employee Directory & Provisioning"])
+    admin_tab1, admin_tab2 = st.tabs([
+        "Create New Employee",
+        "Employee Directory & Provisioning",
+    ])
 
     with admin_tab1:
         st.subheader("Register New Synthetic Employee")
@@ -1225,6 +1163,7 @@ elif page == "HR Employee Admin":
                 st.rerun()
             except Exception as ex:
                 st.error(str(ex))
+
 
 # ==============================================================================
 # 10. SYSTEM AUDIT LOGS

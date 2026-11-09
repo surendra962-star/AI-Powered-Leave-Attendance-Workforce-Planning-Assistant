@@ -27,6 +27,7 @@ def connection(db_path: Path = DB_PATH):
 def initialize(db_path: Path = DB_PATH):
     with connection(db_path) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding='utf-8'))
+        conn.execute("DROP TABLE IF EXISTS reminder_deliveries")
         # Safe migrations for existing databases
         att_cols = {col['name'] for col in conn.execute("PRAGMA table_info(attendance)").fetchall()}
         if 'check_in' not in att_cols:
@@ -68,4 +69,3 @@ def log_audit(actor_id: str, actor_role: str, action: str,
             (actor_id, actor_role, action, target_record, details),
         )
         return int(cursor.lastrowid)
-

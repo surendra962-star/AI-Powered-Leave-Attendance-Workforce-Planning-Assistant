@@ -7,7 +7,7 @@ Verifies:
 4. Validation Error Handling (400 Bad Request with clear error details).
 5. Leave Operations: Submission, balance inquiry, decision with note, and decision history.
 6. Attendance Management: Clock-in, duplicate prevention, clock-out, history, and regularization.
-7. Workforce Planning & What-If Simulations.
+7. Workforce Planning.
 8. Dashboards (Employee, Manager, HR).
 9. Timeline, Expiry Alerts, and Overlap Inquiries.
 10. Multi-Dimensional Analytics and CSV Export.
@@ -25,8 +25,10 @@ from database.db import connection, initialize, DB_PATH
 @pytest.fixture
 def client():
     app.config["TESTING"] = True
+    app.config["ALLOW_TEST_HEADERS"] = True
     with app.test_client() as client:
         yield client
+    app.config["ALLOW_TEST_HEADERS"] = False
 
 
 # ==============================================================================
@@ -92,6 +94,34 @@ def test_rbac_and_scope_rejection(client):
     # Employee attempting to list all employees -> 403
     res_emp_list = client.get("/api/admin/employees", headers=emp_headers)
     assert res_emp_list.status_code == 403
+
+
+def test_authentication_and_sensitive_response_boundaries(client):
+    no_token = client.get("/api/dashboard/employee")
+    assert no_token.status_code == 401
+
+    bad_token = client.get(
+        "/api/dashboard/employee",
+        headers={"Authorization": "Bearer definitely-not-a-valid-token"},
+    )
+    assert bad_token.status_code == 401
+
+    peer_balance = client.get(
+        "/api/leave/balance?employee_id=E002&leave_type=annual&year=2026",
+        headers={"X-Actor-ID": "E001", "X-Actor-Role": "employee", "X-Actor-Team": "T01"},
+    )
+    assert peer_balance.status_code == 403
+
+    login = client.post(
+        "/api/auth/login",
+        json={"employee_id": "E001", "password": "rahuluser@2026"},
+    )
+    assert login.status_code == 200
+    payload = login.get_json()
+    assert "password" not in payload
+    assert "password_hash" not in payload
+    assert "password_salt" not in payload
+    assert payload["access_token"]
 
 
 # ==============================================================================
@@ -223,9 +253,9 @@ def test_attendance_lifecycle_and_duplicate_prevention(client):
 
 
 # ==============================================================================
-# 5. WORKFORCE PLANNING & WHAT-IF SIMULATION
+# 5. WORKFORCE PLANNING
 # ==============================================================================
-def test_workforce_planning_and_simulation(client):
+def test_workforce_planning(client):
     # Coverage endpoint -> 200
     res_cov = client.get("/api/workforce/coverage?team_id=T01&date=2026-11-04")
     assert res_cov.status_code == 200
@@ -234,23 +264,6 @@ def test_workforce_planning_and_simulation(client):
     # Backups for deadline -> 200
     res_bk = client.get("/api/workforce/backups?deadline_id=1")
     assert res_bk.status_code in (200, 400)  # depending on whether deadline 1 exists
-
-    # What-If leave simulation -> 200
-    res_sim = client.post(
-        "/api/workforce/what-if",
-        json={
-            "team_id": "T01",
-            "start_date": "2026-11-16",
-            "end_date": "2026-11-20",
-            "absent_employee_ids": ["E001", "E002"],
-            "threshold_percent": 60
-        }
-    )
-    assert res_sim.status_code == 200
-    sim_data = res_sim.get_json()
-    assert "is_feasible" in sim_data
-    assert "lowest_simulated_coverage_percent" in sim_data
-
 
 # ==============================================================================
 # 6. DASHBOARDS (ROLE-SCOPED)

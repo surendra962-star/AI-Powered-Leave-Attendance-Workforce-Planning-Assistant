@@ -249,7 +249,11 @@ def test_q09_conflicting_policies_transparency(benchmark_questions):
     ]
     with patch('rag.assistant.load_policies', return_value=[p2, conflicting]), \
          patch('rag.assistant.search', return_value=hits):
-        res = ask(q["question"], on=as_of, generator=lambda sys, p: "Policy conflict detected between v2.0 (18 days) [1] and v2.1-CONFLICT (22 days) [2].")
+        res = ask(
+            q["question"],
+            on=as_of,
+            generator=lambda sys, p: "The v2.1-CONFLICT draft clearly grants 22 days; use it. [2]",
+        )
 
     # Verify both sources cited transparently
     assert len(res["sources"]) == 2
@@ -257,6 +261,10 @@ def test_q09_conflicting_policies_transparency(benchmark_questions):
     assert "2.0" in versions and "2.1-CONFLICT" in versions
     # Conflict warning raised
     assert any("conflict" in w.lower() for w in res["warnings"])
+    assert "conflict detected" in res["answer"].lower()
+    assert "18 annual leave days" in res["answer"].lower()
+    assert "22 annual leave days" in res["answer"].lower()
+    assert "do not silently select one version" in res["answer"].lower()
 
 
 def test_q10_out_of_scope_abstention(benchmark_questions):

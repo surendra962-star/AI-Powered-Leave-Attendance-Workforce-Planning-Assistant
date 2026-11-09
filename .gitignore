@@ -16,6 +16,12 @@ htmlcov/
 # Local database and vector embeddings
 data/*.db
 data/chroma/
+*.sqlite
+*.sqlite3
+
+# Logs and local runtime output
+*.log
+logs/
 
 # Operating System files
 .DS_Store
@@ -31,6 +37,8 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+.agents/
+.claude/
 
 # Packaging and Submission archives
 *.zip

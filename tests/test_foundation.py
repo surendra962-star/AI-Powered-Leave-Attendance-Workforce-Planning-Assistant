@@ -18,9 +18,10 @@ def test_schema_enforces_foreign_keys(tmp_path: Path):
             raise AssertionError('Foreign key violation was accepted')
 
 
-def test_synthetic_data():
-    seed()
-    with connection() as conn:
+def test_synthetic_data(tmp_path: Path):
+    db_path = tmp_path / 'synthetic_data.db'
+    seed(db_path)
+    with connection(db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM employees WHERE role != 'hr'").fetchone()[0] == 10
         assert conn.execute('SELECT COUNT(*) FROM employees').fetchone()[0] >= 10
         assert conn.execute('SELECT COUNT(*) FROM teams').fetchone()[0] >= 2
@@ -32,10 +33,10 @@ def test_synthetic_data():
         assert conn.execute('SELECT COUNT(*) FROM leave_requests WHERE status = ?', ('pending',)).fetchone()[0] >= 1
 
 
-def test_seed_is_repeatable():
-    seed()
-    seed()
-    with connection() as conn:
+def test_seed_is_repeatable(tmp_path: Path):
+    db_path = tmp_path / 'repeatable_seed.db'
+    seed(db_path)
+    seed(db_path)
+    with connection(db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM employees WHERE role != 'hr'").fetchone()[0] == 10
         assert conn.execute('SELECT COUNT(*) FROM employees').fetchone()[0] >= 10
-

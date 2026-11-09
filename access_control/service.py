@@ -124,7 +124,8 @@ def require_employee_scope(actor: UserContext, employee_id: str, db_path=DB_PATH
 def create_employee(actor: UserContext, employee_id: str, name: str, email: str,
                     role: str, team_id: str, manager_id: Optional[str] = None,
                     joined_on: Optional[str] = None, initial_annual: float = 18.0,
-                    initial_sick: float = 10.0, db_path=DB_PATH) -> None:
+                    initial_sick: float = 10.0, initial_password: Optional[str] = None,
+                    db_path=DB_PATH) -> Dict[str, Any]:
     """HR-only creation of a new synthetic employee record and leave balances."""
     require_role(actor, "hr")
     emp_id = employee_id.strip()
@@ -154,6 +155,12 @@ def create_employee(actor: UserContext, employee_id: str, name: str, email: str,
             (employee_id, leave_type, year, entitled_days, used_days)
             VALUES (?, 'annual', ?, ?, 0), (?, 'sick', ?, ?, 0)""",
             (emp_id, year, initial_annual, emp_id, year, initial_sick))
+        if initial_password is not None:
+            salt, digest = _password_hash(initial_password)
+            conn.execute("""INSERT INTO user_credentials(employee_id,password_salt,password_hash)
+                VALUES(?,?,?) ON CONFLICT(employee_id) DO UPDATE SET
+                password_salt=excluded.password_salt,password_hash=excluded.password_hash""",
+                (emp_id, salt, digest))
     log_audit(actor.employee_id, actor.role, "create_employee", emp_id, f"Created {emp_role} {emp_name}", db_path)
     return {
         "employee_id": emp_id,
@@ -232,4 +239,3 @@ def get_audit_logs(actor: UserContext, limit: int = 100, action_filter: Optional
                 (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
-

@@ -9,6 +9,7 @@ from rag.chunks import Chunk
 
 
 import os
+import re
 
 # Configuration
 COLLECTION = "hr_policy_sections"
@@ -210,19 +211,11 @@ def search(
     metadatas = results["metadatas"][0]
     distances = results["distances"][0]
 
-    output = []
-
-    for document, metadata, distance in zip(
-        documents,
-        metadatas,
-        distances
-    ):
-        output.append(
-            {
-                "text": document,
-                "metadata": metadata,
-                "distance": distance
-            }
-        )
-
-    return output
+    return [
+        {
+            "text": document,
+            "metadata": metadata,
+            "distance": distance,
+        }
+        for document, metadata, distance in zip(documents, metadatas, distances)
+    ]

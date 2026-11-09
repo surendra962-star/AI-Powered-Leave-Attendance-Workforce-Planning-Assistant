@@ -10,8 +10,9 @@ from typing import Optional, Dict, Any, List, Union
 import requests
 
 from access_control.service import UserContext
+from config import FLASK_API_URL
 
-DEFAULT_API_BASE_URL = os.getenv("FLASK_API_URL", "http://127.0.0.1:5001")
+DEFAULT_API_BASE_URL = FLASK_API_URL
 
 
 class FlaskAPIClient:
@@ -20,14 +21,25 @@ class FlaskAPIClient:
     def __init__(self, base_url: str = DEFAULT_API_BASE_URL, timeout: float = 8.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.access_token: Optional[str] = None
+        try:
+            import streamlit as st
+            self.access_token = st.session_state.get("api_access_token")
+        except Exception:
+            pass
 
     def _headers(self, actor: Optional[UserContext] = None) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        if actor:
-            headers["X-Actor-ID"] = actor.employee_id
-            headers["X-Actor-Role"] = actor.role
-            if actor.team_id:
-                headers["X-Actor-Team"] = actor.team_id
+        if self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
+        if self.access_token:
+            headers["Authorization"] = "Bearer " + self.access_token
+        return headers
+
+    def _headers(self, actor: Optional[UserContext] = None) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.access_token:
+            headers["Authorization"] = "Bearer " + self.access_token
         return headers
 
     def is_healthy(self) -> bool:
@@ -48,7 +60,9 @@ class FlaskAPIClient:
         if resp.status_code != 200:
             err = resp.json().get("error", "Login failed") if resp.headers.get("content-type", "").startswith("application/json") else resp.text
             raise PermissionError(err)
-        return resp.json()
+        data = resp.json()
+        self.access_token = data.get("access_token")
+        return data
 
     def submit_leave_request(self, actor: UserContext, leave_type: str, start_date: str,
                              end_date: str, reason: str = "",
@@ -256,4 +270,3 @@ class FlaskAPIClient:
         if resp.status_code != 200:
             return []
         return resp.json()
-

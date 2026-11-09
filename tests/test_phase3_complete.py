@@ -566,4 +566,3 @@ class TestEvidenceAndHumanDecisionAuthority:
         assert "Protected Deadline" in deadline_titles
         # With backup assigned the deadline should not block to high_risk
         assert result["recommendation"] in ("low_risk", "review_required")
-
