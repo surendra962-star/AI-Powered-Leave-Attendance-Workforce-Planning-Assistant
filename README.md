@@ -180,10 +180,8 @@ persisted timeline status and date rules; they are not browser notifications.
 
 - The complete pytest suite and its collected/pass/fail/skip counts are recorded in
   [EVALUATION_REPORT.md](EVALUATION_REPORT.md).
-- The fixed live-RAG benchmark report is [LIVE_RAG_BENCHMARK_RESULTS.md](LIVE_RAG_BENCHMARK_RESULTS.md).
-- The benchmark distinguishes correct source retrieval, answer support, and optional
-  Ollama live generation. Unit RAG tests should not be treated as evidence that a live
-  Ollama model was available.
+- The report summarizes expected and actual outcomes for the assessment's required
+  functional and RAG evaluation cases.
 
 Important RAG behavior:
 - Manager review timeline: **3 business days**.
